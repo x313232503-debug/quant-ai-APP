@@ -126,6 +126,14 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
 .fc-pos-head b { font-size: 14px; font-variant-numeric: tabular-nums; }
 .fc-pos-bar { height: 6px; border-radius: 3px; background: var(--panel2); margin-top: 4px; overflow: hidden; }
 .fc-pos-bar i { display: block; height: 100%; border-radius: 3px; transition: width .2s; }
+.fc-adv { margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 8px; }
+.fc-adv-h { font-size: 12px; color: var(--accent); font-weight: 700; margin-bottom: 6px; }
+.fc-adv-row { display: flex; gap: 8px; align-items: baseline; margin: 5px 0; }
+.fc-adv-k { flex: 0 0 32px; font-size: 11px; font-weight: 700; color: var(--muted); padding-top: 1px; }
+.fc-adv-v { flex: 1; font-size: 11px; color: var(--text); line-height: 1.45; }
+.fc-adv-peer { font-size: 10.5px; color: var(--muted); margin: 6px 0 4px; line-height: 1.4; }
+.fc-adv-sum { font-size: 11px; color: #f0b90b; line-height: 1.45; margin: 4px 0; }
+.fc-adv-verify { font-size: 10px; color: var(--muted); line-height: 1.4; margin-top: 6px; border-top: 1px dotted var(--line); padding-top: 5px; }
 
 /* modal */
 #modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; place-items: center; z-index: 50; padding: 16px; }
@@ -274,6 +282,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
         <div id="fcTarget" class="fc-target"></div>
         <div id="fcDrivers" class="fc-drivers"></div>
         <div id="fcPlan" class="fc-plan"></div>
+        <div id="fcAdvice" class="fc-adv"></div>
         <p class="note">基于历史走势、当前时间节点（星期/季末季节性）与全市场情绪（广度/动量/波动）的启发式打分，<b>非投资建议</b>；预测区间为统计置信带，非确定性目标。</p>
       </div>
 
@@ -1073,6 +1082,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
       dl.appendChild(row);
     });
     renderForecastPlan(fc);
+    renderForecastAdvice(fc);
     drawForecastCone($('#fcChart'), state.bars, fc);
   }
   function renderForecastPlan(fc) {
@@ -1092,6 +1102,82 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
       '<div class="fc-plan-pos"><div class="fc-pos-head"><span>示例仓位占比（基于置信度）</span><b style="color:' + rc + '">' + posPct + '%</b></div>' +
       '<div class="fc-pos-bar"><i style="width:' + posPct + '%;background:' + rc + '"></i></div></div>' +
       '<div class="fc-plan-note">参考纪律：单笔风险≤1% · 止损≈入场价−1.5×ATR · 同时持仓≤3只 · 盈亏比≥2:1。非投资建议。</div>';
+  }
+
+  function forecastAdvice(fc) {
+    const bars = state.bars, ind = state.ind; if (!bars || !ind) return null;
+    const n = bars.length, c = bars[n - 1].c;
+    const ma20 = ind.ma20[n - 1], ma50 = ind.ma50[n - 1], ma200 = ind.ma200[n - 1];
+    const ma20Up = ind.ma20[n - 1] > ind.ma20[n - 2];
+    const atrAbs = c * fc.atr;
+    const p20 = fc.proj[20];
+    const env = fc.env || ensureMarketEnv();
+    const breadth = env.breadth, avgMom = env.avgMom;
+    const seas = fc.seas || { dowEdge: 0, qpos: 0, nearQuarterEnd: false, todayDow: 0 };
+    const fmtP = function (v) { return v >= 1000 ? v.toFixed(2) : v.toFixed(v < 10 ? 4 : 2); };
+    const dowName = ['日','一','二','三','四','五','六'][seas.todayDow] || '';
+
+    const peer = '同期参考：近1年样本里周' + dowName + '多' + (seas.dowEdge >= 0 ? '偏多' : '偏空')
+      + '；当前处季度进度 ' + Math.round(seas.qpos * 100) + '%'
+      + (seas.nearQuarterEnd ? '（临近季末，历史波动易放大）' : '')
+      + '；全市场 ' + Math.round(breadth * 100) + '% 站上MA20、20日动量' + (avgMom * 100).toFixed(1) + '%';
+
+    let trial;
+    if (fc.regime === '看涨' || fc.regime === '震荡偏多') {
+      const tp = ma20 ? ma20 : c, ts = tp - 1.5 * atrAbs;
+      const frac = fc.confidence >= 60 ? '1/3 试仓（≤示例仓位的1/2）' : '仅 1/6 观察仓';
+      trial = '可在回踩 ' + fmtP(tp) + ' 附近' + frac + '；有效跌破 ' + fmtP(ts) + ' 则放弃试仓。';
+    } else if (fc.regime === '震荡') {
+      trial = '暂不试仓。等放量站上 MA20（' + (ma20 ? fmtP(ma20) : '—') + '）或回踩不破再动手，避免追涨杀跌。';
+    } else {
+      trial = '暂不试仓。形态偏空，若已持仓优先参考平仓建议减仓，待情绪修复、评分转正再考虑。';
+    }
+
+    let build;
+    const bp = ma20 ? ma20 : c, bt = p20.hi;
+    if ((fc.regime === '看涨' || fc.regime === '震荡偏多') && ma20Up && breadth > 0.5) {
+      build = '趋势确认（MA20 向上 + 全市场 ' + Math.round(breadth * 100) + '% 站上MA20）后，回踩 ' + fmtP(bp) + ' 不破即分批建仓；首目标看 ' + fmtP(bt) + '（+' + ((bt / c - 1) * 100).toFixed(1) + '%）。';
+    } else if (fc.regime === '震荡') {
+      build = '等待 MA20 上穿 MA50 且放量确认趋势；当前以试仓/观望为主，建仓节奏放慢' + (seas.nearQuarterEnd ? '（临近季末资金面偏紧）' : '') + '。';
+    } else {
+      build = '暂不适合建仓。形态/情绪偏空，优先控制风险，等评分转正、MA 重新多头排列再评估。';
+    }
+
+    let exit;
+    const es = c - 1.5 * atrAbs, et = p20.hi;
+    if (fc.regime === '震荡偏空' || fc.regime === '看跌' || p20.mid < c * (1 - fc.atr)) {
+      exit = '形态偏空，建议逢高减仓/平仓；硬止损 ' + fmtP(es) + '（≈入场−1.5×ATR）或有效跌破 MA20（' + (ma20 ? fmtP(ma20) : '—') + '）即离场，规避下行。';
+    } else {
+      exit = '持有者：不破 MA20（' + (ma20 ? fmtP(ma20) : '—') + '）不平；第一目标 ' + fmtP(et) + '（+' + ((et / c - 1) * 100).toFixed(1) + '%），到 +8~12% 减 1/3 锁利。破 ' + fmtP(es) + ' 止损。';
+    }
+
+    let summary;
+    const bull = (fc.regime === '看涨' || fc.regime === '震荡偏多');
+    const bear = (fc.regime === '震荡偏空' || fc.regime === '看跌');
+    if (bull && breadth > 0.5 && fc.confidence >= 60 && seas.dowEdge >= 0) {
+      summary = '综合（方向+情绪+时间共振偏多）：可逢低分批布局，形成「试仓→回踩建仓→破位止损」闭环；但季末/高波动时降低频率。';
+    } else if (bull) {
+      summary = '综合：方向偏多但确认度一般，轻仓试探为主，等放量突破/均线共振再加码，不追高。';
+    } else if (bear) {
+      summary = '综合：方向与情绪偏空，以减仓防守为上，仅做必要的止损纪律，不抄底摊平。';
+    } else {
+      summary = '综合：方向不明，保持中性仓位，用试仓验证方向，出现共振信号再决定加减。';
+    }
+
+    const verify = '本提示随每次刷新动态重算：盘中价位、市场情绪（广度 ' + Math.round(breadth * 100) + '%）、时间节点（周' + dowName + '/季度进度 ' + Math.round(seas.qpos * 100) + '%）任一变动都会更新结论。请持续核对评分与均线是否翻转，过去结论不保证未来，变动时及时调整操作。';
+    return { trial: trial, build: build, exit: exit, peer: peer, summary: summary, verify: verify };
+  }
+
+  function renderForecastAdvice(fc) {
+    const el = $('#fcAdvice'); if (!el) return;
+    const a = forecastAdvice(fc); if (!a) { el.innerHTML = ''; return; }
+    el.innerHTML = '<div class="fc-adv-h">实操建议（试仓 / 建仓 / 平仓）</div>'
+      + '<div class="fc-adv-row"><span class="fc-adv-k">试仓</span><span class="fc-adv-v">' + a.trial + '</span></div>'
+      + '<div class="fc-adv-row"><span class="fc-adv-k">建仓</span><span class="fc-adv-v">' + a.build + '</span></div>'
+      + '<div class="fc-adv-row"><span class="fc-adv-k">平仓</span><span class="fc-adv-v">' + a.exit + '</span></div>'
+      + '<div class="fc-adv-peer">' + a.peer + '</div>'
+      + '<div class="fc-adv-sum">' + a.summary + '</div>'
+      + '<div class="fc-adv-verify">' + a.verify + '</div>';
   }
   function drawForecastCone(canvas, bars, fc) {
     if (!canvas) return; const dpr = window.devicePixelRatio || 1; const W = canvas.clientWidth, H = canvas.clientHeight; if (!W || !H) return;
