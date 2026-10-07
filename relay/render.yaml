@@ -1,0 +1,16 @@
+# Render 一键部署蓝图（网页连 GitHub 后自动识别）
+# 用法：Render 控制台 → New → Blueprint → 选本仓库 → 自动按此文件建服务
+services:
+  - type: web
+    name: quantai-relay
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8000"
+      - key: TQ_USER
+        sync: false
+      - key: TQ_PASS
+        sync: false
