@@ -115,6 +115,12 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
 .fc-drv-name { color: var(--muted); font-size: 11px; }
 .fc-drv-dir { font-weight: 700; font-size: 11px; }
 .fc-drv-txt { color: var(--text); font-size: 10.5px; line-height: 1.3; }
+.fc-plan { margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 8px; }
+.fc-plan-row { display: flex; align-items: center; gap: 8px; }
+.fc-stance { font-size: 13px; }
+.fc-plan-conf { font-size: 11px; color: var(--muted); }
+.fc-plan-act { font-size: 11.5px; color: var(--text); margin: 4px 0; line-height: 1.4; }
+.fc-plan-note { font-size: 10px; color: var(--muted); line-height: 1.4; }
 
 /* modal */
 #modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; place-items: center; z-index: 50; padding: 16px; }
@@ -262,6 +268,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
         <canvas id="fcChart"></canvas>
         <div id="fcTarget" class="fc-target"></div>
         <div id="fcDrivers" class="fc-drivers"></div>
+        <div id="fcPlan" class="fc-plan"></div>
         <p class="note">基于历史走势、当前时间节点（星期/季末季节性）与全市场情绪（广度/动量/波动）的启发式打分，<b>非投资建议</b>；预测区间为统计置信带，非确定性目标。</p>
       </div>
 
@@ -788,6 +795,8 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H); ctx.font = '10px ui-monospace, Menlo, monospace';
     const n = bars.length; if (n === 0) return;
+    const horizon = (opts && opts.forecast && opts.forecast.length) ? opts.forecast.length : 0;
+    const total = n + horizon;
     const padR = 58, padL = 8, padT = 8;
     const volH = H * 0.16, rsiH = H * 0.14, macdH = H * 0.16, gap = 6;
     const mainH = H - volH - rsiH - macdH - gap * 3 - padT;
@@ -796,13 +805,14 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     const rsiTop = volBot + gap, rsiBot = rsiTop + rsiH;
     const macdTop = rsiBot + gap, macdBot = macdTop + macdH;
     const plotW = W - padL - padR;
-    const x = function (i) { return padL + (i + 0.5) * (plotW / n); };
-    const cw = Math.max(1, plotW / n * 0.6);
+    const x = function (i) { return padL + (i + 0.5) * (plotW / total); };
+    const cw = Math.max(1, plotW / total * 0.6);
     let lo = Infinity, hi = -Infinity;
     for (let i = 0; i < n; i++) {
       lo = Math.min(lo, bars[i].l); hi = Math.max(hi, bars[i].h);
       if (showBoll && ind.boll.up[i] != null) { lo = Math.min(lo, ind.boll.dn[i]); hi = Math.max(hi, ind.boll.up[i]); }
     }
+    if (horizon) { const f = opts.forecast; for (let k = 0; k < horizon; k++) { lo = Math.min(lo, f[k].lo); hi = Math.max(hi, f[k].hi); } }
     const pad = (hi - lo) * 0.06; lo -= pad; hi += pad;
     const y = function (p) { return mainBot - (p - lo) / (hi - lo) * mainH; };
     ctx.strokeStyle = GRID; ctx.fillStyle = '#6b7280'; ctx.lineWidth = 1;
@@ -868,6 +878,21 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
       dline(ind.macd.dif, '#f0b90b'); dline(ind.macd.dea, '#3b82f6');
       ctx.fillStyle = '#6b7280'; ctx.fillText('MACD', padL + 2, top + 10);
     })(macdTop, macdBot);
+    if (horizon && opts.forecast && opts.forecast.length > 1) {
+      const f = opts.forecast; const lastX = x(n - 1);
+      ctx.strokeStyle = 'rgba(240,185,11,0.32)'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(lastX, padT); ctx.lineTo(lastX, macdBot); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(124,92,255,0.13)'; ctx.beginPath();
+      for (let k = 0; k < horizon; k++) ctx.lineTo(x(n - 1 + k), y(f[k].hi));
+      for (let k = horizon - 1; k >= 0; k--) ctx.lineTo(x(n - 1 + k), y(f[k].lo));
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(124,92,255,0.6)'; ctx.lineWidth = 1;
+      ctx.beginPath(); for (let k = 0; k < horizon; k++) { const px = x(n - 1 + k), py = y(f[k].hi); k ? ctx.lineTo(px, py) : ctx.moveTo(px, py); } ctx.stroke();
+      ctx.beginPath(); for (let k = 0; k < horizon; k++) { const px = x(n - 1 + k), py = y(f[k].lo); k ? ctx.lineTo(px, py) : ctx.moveTo(px, py); } ctx.stroke();
+      ctx.strokeStyle = '#f0b90b'; ctx.setLineDash([5, 3]); ctx.lineWidth = 1.5; ctx.beginPath();
+      ctx.moveTo(lastX, y(bars[n - 1].c)); for (let k = 1; k < horizon; k++) ctx.lineTo(x(n - 1 + k), y(f[k].mid)); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = '#f0b90b'; ctx.font = '10px ui-monospace, monospace'; ctx.fillText('预测' + (horizon - 1) + '日', x(n) + 2, padT + 10);
+    }
   }
   global.QChart = { draw: draw };
 })(window);
@@ -1025,8 +1050,8 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     return { score: score, regime: regime, confidence: Math.round(conf * 100), proj: proj, drivers: drivers, pos52: pos52, atr: atr, env: env, seas: seas, m20: m20 };
   }
   function regimeColor(r) { return ({ '看涨': '#26a69a', '震荡偏多': '#7dd3a8', '震荡': '#f0b90b', '震荡偏空': '#f59e7a', '看跌': '#ef5350' })[r] || '#f0b90b'; }
-  function renderForecast() {
-    if (!state.bars) return; const m = meta(state.code); const env = ensureMarketEnv(); const fc = forecastSymbol(m, state.bars, env);
+  function renderForecast(fc) {
+    if (!state.bars) return; if (!fc) { const m = meta(state.code); fc = forecastSymbol(m, state.bars, ensureMarketEnv()); }
     const badge = $('#fcBadge'); badge.textContent = fc.regime; badge.style.background = regimeColor(fc.regime);
     $('#fcConf').textContent = '置信度 ' + fc.confidence + '%';
     const sb = $('#fcScoreBar'); sb.style.width = Math.abs(fc.score) + '%'; sb.style.background = fc.score >= 0 ? '#26a69a' : '#ef5350';
@@ -1041,7 +1066,21 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
       row.innerHTML = '<span class="fc-drv-name">' + d.name + '</span><span class="fc-drv-dir" style="color:' + col + '">' + dir + '</span><span class="fc-drv-txt">' + d.txt + '</span>';
       dl.appendChild(row);
     });
+    renderForecastPlan(fc);
     drawForecastCone($('#fcChart'), state.bars, fc);
+  }
+  function renderForecastPlan(fc) {
+    const el = $('#fcPlan'); if (!el) return;
+    let stance, action;
+    if (fc.regime === '看涨') { stance = '偏多'; action = '可考虑分批建仓 / 顺势加仓，回踩均线择机介入'; }
+    else if (fc.regime === '震荡偏多') { stance = '略偏多'; action = '逢低关注、轻仓试探，避免追高'; }
+    else if (fc.regime === '震荡') { stance = '中性'; action = '观望为主，控制仓位等待方向明朗'; }
+    else if (fc.regime === '震荡偏空') { stance = '偏空'; action = '减仓观望，规避追涨与抄底'; }
+    else { stance = '防守'; action = '以现金 / 防御为主，优先控制回撤'; }
+    const confWord = fc.confidence >= 70 ? '高' : fc.confidence >= 50 ? '中' : '低';
+    el.innerHTML = '<div class="fc-plan-row"><b class="fc-stance" style="color:' + regimeColor(fc.regime) + '">' + stance + '</b><span class="fc-plan-conf">置信' + confWord + '</span></div>' +
+      '<div class="fc-plan-act">' + action + '</div>' +
+      '<div class="fc-plan-note">参考纪律：单笔风险≤1% · 止损≈入场价−1.5×ATR · 同时持仓≤3只 · 盈亏比≥2:1。非投资建议。</div>';
   }
   function drawForecastCone(canvas, bars, fc) {
     if (!canvas) return; const dpr = window.devicePixelRatio || 1; const W = canvas.clientWidth, H = canvas.clientHeight; if (!W || !H) return;
@@ -1105,8 +1144,10 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
 
   function recompute() {
     state.sig = QS.signalAt(state.bars, state.ind, state.weights);
-    renderSignal(); renderBacktest(); renderForecast();
-    window.QChart.draw($('#chart'), state.bars, state.ind, {});
+    renderSignal(); renderBacktest();
+    const m = meta(state.code); const env = ensureMarketEnv(); const fc = forecastSymbol(m, state.bars, env);
+    window.QChart.draw($('#chart'), state.bars, state.ind, { forecast: fc.proj });
+    renderForecast(fc);
   }
 
   function renderHeader() {
