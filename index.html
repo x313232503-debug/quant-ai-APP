@@ -121,6 +121,11 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
 .fc-plan-conf { font-size: 11px; color: var(--muted); }
 .fc-plan-act { font-size: 11.5px; color: var(--text); margin: 4px 0; line-height: 1.4; }
 .fc-plan-note { font-size: 10px; color: var(--muted); line-height: 1.4; }
+.fc-plan-pos { margin-top: 6px; }
+.fc-pos-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; color: var(--muted); }
+.fc-pos-head b { font-size: 14px; font-variant-numeric: tabular-nums; }
+.fc-pos-bar { height: 6px; border-radius: 3px; background: var(--panel2); margin-top: 4px; overflow: hidden; }
+.fc-pos-bar i { display: block; height: 100%; border-radius: 3px; transition: width .2s; }
 
 /* modal */
 #modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; place-items: center; z-index: 50; padding: 16px; }
@@ -880,18 +885,19 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     })(macdTop, macdBot);
     if (horizon && opts.forecast && opts.forecast.length > 1) {
       const f = opts.forecast; const lastX = x(n - 1);
+      const bc = (opts.forecastBias === 'up') ? '239,83,80' : (opts.forecastBias === 'down') ? '38,166,154' : '124,92,255';
       ctx.strokeStyle = 'rgba(240,185,11,0.32)'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(lastX, padT); ctx.lineTo(lastX, macdBot); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(124,92,255,0.13)'; ctx.beginPath();
+      ctx.fillStyle = 'rgba(' + bc + ',0.13)'; ctx.beginPath();
       for (let k = 0; k < horizon; k++) ctx.lineTo(x(n - 1 + k), y(f[k].hi));
       for (let k = horizon - 1; k >= 0; k--) ctx.lineTo(x(n - 1 + k), y(f[k].lo));
       ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = 'rgba(124,92,255,0.6)'; ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(' + bc + ',0.6)'; ctx.lineWidth = 1;
       ctx.beginPath(); for (let k = 0; k < horizon; k++) { const px = x(n - 1 + k), py = y(f[k].hi); k ? ctx.lineTo(px, py) : ctx.moveTo(px, py); } ctx.stroke();
       ctx.beginPath(); for (let k = 0; k < horizon; k++) { const px = x(n - 1 + k), py = y(f[k].lo); k ? ctx.lineTo(px, py) : ctx.moveTo(px, py); } ctx.stroke();
-      ctx.strokeStyle = '#f0b90b'; ctx.setLineDash([5, 3]); ctx.lineWidth = 1.5; ctx.beginPath();
+      ctx.strokeStyle = 'rgb(' + bc + ')'; ctx.setLineDash([5, 3]); ctx.lineWidth = 1.5; ctx.beginPath();
       ctx.moveTo(lastX, y(bars[n - 1].c)); for (let k = 1; k < horizon; k++) ctx.lineTo(x(n - 1 + k), y(f[k].mid)); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = '#f0b90b'; ctx.font = '10px ui-monospace, monospace'; ctx.fillText('预测' + (horizon - 1) + '日', x(n) + 2, padT + 10);
+      ctx.fillStyle = 'rgb(' + bc + ')'; ctx.font = '10px ui-monospace, monospace'; ctx.fillText('预测' + (horizon - 1) + '日', x(n) + 2, padT + 10);
     }
   }
   global.QChart = { draw: draw };
@@ -1078,8 +1084,13 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     else if (fc.regime === '震荡偏空') { stance = '偏空'; action = '减仓观望，规避追涨与抄底'; }
     else { stance = '防守'; action = '以现金 / 防御为主，优先控制回撤'; }
     const confWord = fc.confidence >= 70 ? '高' : fc.confidence >= 50 ? '中' : '低';
-    el.innerHTML = '<div class="fc-plan-row"><b class="fc-stance" style="color:' + regimeColor(fc.regime) + '">' + stance + '</b><span class="fc-plan-conf">置信' + confWord + '</span></div>' +
+    const posBase = ({ '看涨': 0.85, '震荡偏多': 0.55, '震荡': 0.30, '震荡偏空': 0.12, '防守': 0.0 })[fc.regime] || 0.30;
+    const posPct = Math.round(Math.max(0, Math.min(0.9, posBase * fc.confidence / 100)) * 100);
+    const rc = regimeColor(fc.regime);
+    el.innerHTML = '<div class="fc-plan-row"><b class="fc-stance" style="color:' + rc + '">' + stance + '</b><span class="fc-plan-conf">置信' + confWord + '</span></div>' +
       '<div class="fc-plan-act">' + action + '</div>' +
+      '<div class="fc-plan-pos"><div class="fc-pos-head"><span>示例仓位占比（基于置信度）</span><b style="color:' + rc + '">' + posPct + '%</b></div>' +
+      '<div class="fc-pos-bar"><i style="width:' + posPct + '%;background:' + rc + '"></i></div></div>' +
       '<div class="fc-plan-note">参考纪律：单笔风险≤1% · 止损≈入场价−1.5×ATR · 同时持仓≤3只 · 盈亏比≥2:1。非投资建议。</div>';
   }
   function drawForecastCone(canvas, bars, fc) {
@@ -1146,7 +1157,8 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     state.sig = QS.signalAt(state.bars, state.ind, state.weights);
     renderSignal(); renderBacktest();
     const m = meta(state.code); const env = ensureMarketEnv(); const fc = forecastSymbol(m, state.bars, env);
-    window.QChart.draw($('#chart'), state.bars, state.ind, { forecast: fc.proj });
+    const fBias = fc.raw > 10 ? 'up' : fc.raw < -10 ? 'down' : 'flat';
+    window.QChart.draw($('#chart'), state.bars, state.ind, { forecast: fc.proj, forecastBias: fBias });
     renderForecast(fc);
   }
 
