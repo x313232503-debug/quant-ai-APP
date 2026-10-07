@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>QuantAI · 量化 AI 股票期货终端（实时版）</title>
+  <style>:root {
+  --bg: #0b0e14; --panel: #121722; --panel2: #171d2b; --line: #1f2738;
+  --text: #e6e9ef; --muted: #8b93a7; --accent: #f0b90b; --blue: #3b82f6;
+  --up: #26a69a; --down: #ef5350;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui;
+  font-size: 13px; height: 100vh; overflow: hidden;
+}
+.layout { display: grid; grid-template-columns: 250px 1fr 330px; height: 100vh; }
+.sidebar { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.brand { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.brand h1 { font-size: 15px; letter-spacing: .5px; }
+.brand .ai { color: var(--accent); }
+.brand p { color: var(--muted); font-size: 11px; margin-top: 3px; }
+.section-title { padding: 10px 16px 6px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
+.wl-item { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 9px 14px; cursor: pointer; border-left: 2px solid transparent; }
+.wl-item:hover { background: var(--panel2); }
+.wl-item.active { background: var(--panel2); border-left-color: var(--accent); }
+.wl-name { font-weight: 600; }
+.wl-name small { display: block; color: var(--muted); font-weight: 400; font-size: 10px; }
+.wl-price { text-align: right; font-variant-numeric: tabular-nums; }
+.wl-price small { display: block; font-size: 10px; }
+.wl-sig { width: 22px; height: 22px; border-radius: 6px; color: #0b0e14; font-weight: 700; display: grid; place-items: center; font-size: 12px; }
+.wl-live { color: #26a69a; font-size: 9px; margin-left: 3px; }
+
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.topbar { display: flex; align-items: baseline; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+#symName { font-size: 18px; font-weight: 700; }
+#symType { color: var(--muted); font-size: 11px; border: 1px solid var(--line); padding: 1px 7px; border-radius: 10px; }
+#lastPrice { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; margin-left: 6px; }
+#chg { font-size: 13px; font-variant-numeric: tabular-nums; }
+.topbar .spacer { flex: 1; }
+.topbar select, .topbar button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
+.topbar button:hover { border-color: var(--accent); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: none; border-radius: 0; padding: 6px 12px; background: var(--panel2); }
+.seg button.on { background: var(--accent); color: #0b0e14; font-weight: 700; }
+#srcBadge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--line); }
+#chart { flex: 1; width: 100%; min-height: 0; display: block; }
+.status { padding: 4px 16px; color: var(--muted); font-size: 11px; border-top: 1px solid var(--line); }
+
+.right { background: var(--panel); border-left: 1px solid var(--line); padding: 16px; overflow-y: auto; min-height: 0; }
+.card { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+.card h3 { font-size: 12px; color: var(--muted); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+#signalBadge { display: inline-block; color: #0b0e14; font-weight: 700; padding: 4px 14px; border-radius: 8px; font-size: 15px; }
+#confidence { color: var(--muted); margin-left: 8px; font-size: 12px; }
+.score-wrap { margin-top: 12px; }
+.score-track { height: 8px; background: var(--line); border-radius: 5px; overflow: hidden; }
+#scoreBar { height: 100%; width: 0; transition: width .3s; }
+#scoreVal, #explain { display: block; margin-top: 8px; }
+#explain { color: var(--muted); line-height: 1.5; font-size: 12px; }
+
+.w-row { display: grid; grid-template-columns: 64px 1fr 36px; align-items: center; gap: 8px; margin-bottom: 8px; }
+.w-row label { color: var(--muted); font-size: 11px; }
+.w-row input[type=range] { width: 100%; accent-color: var(--accent); }
+.w-val { text-align: right; font-variant-numeric: tabular-nums; font-size: 11px; }
+
+.metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.metric { background: var(--bg); border-radius: 8px; padding: 10px; }
+.metric .k { color: var(--muted); font-size: 11px; }
+.metric .v { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 3px; }
+#btCompare { margin-top: 10px; font-size: 12px; }
+.note { color: var(--muted); font-size: 11px; line-height: 1.6; }
+.tag { color: var(--accent); }
+
+#btnAI { width: 100%; background: linear-gradient(135deg,#f0b90b,#e08e0b); color:#0b0e14; font-weight:700; border:none; border-radius:8px; padding:9px; cursor:pointer; }
+#btnAI:disabled { opacity:.5; cursor:default; }
+#aiOut { margin-top: 10px; color: var(--text); font-size: 12px; line-height: 1.7; white-space: pre-wrap; }
+#aiOut.muted { color: var(--muted); }
+.card .row { display:flex; gap:8px; }
+
+/* modal */
+#modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; place-items: center; z-index: 50; padding: 16px; }
+#modal.show { display: grid; }
+.modal-box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; width: 100%; max-width: 420px; }
+.modal-box h2 { font-size: 15px; margin-bottom: 14px; }
+.modal-box label { display: block; color: var(--muted); font-size: 11px; margin: 10px 0 4px; }
+.modal-box input { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: 12px; }
+.modal-box .actions { display: flex; gap: 10px; margin-top: 18px; }
+.modal-box button { flex: 1; padding: 9px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); cursor: pointer; }
+.modal-box button.primary { background: var(--accent); color: #0b0e14; font-weight: 700; border: none; }
+
+@media (max-width: 860px) {
+  body { height: auto; overflow: auto; }
+  .layout { grid-template-columns: 1fr; height: auto; }
+  .sidebar { max-height: 40vh; border-right: none; border-bottom: 1px solid var(--line); }
+  #chart { height: 340px; }
+  .right { border-left: none; border-top: 1px solid var(--line); }
+}
+</style>
+</head>
+<body>
+  <div class="layout">
+    <!-- 左：自选 -->
+    <aside class="sidebar">
+      <div class="brand">
+        <h1><span class="ai">Quant</span>AI 终端</h1>
+        <p>实时行情 · 多因子信号 · 回测 · 大模型解读</p>
+      </div>
+      <div class="section-title">自选标的</div>
+      <ul id="watchlist"></ul>
+    </aside>
+
+    <!-- 中：行情图 -->
+    <main class="main">
+      <div class="topbar">
+        <span id="symName">—</span>
+        <span id="symType">—</span>
+        <span id="srcBadge">模拟</span>
+        <span id="lastPrice">—</span>
+        <span id="chg">—</span>
+        <span class="spacer"></span>
+        <span class="seg">
+          <button id="srcSim" class="on">模拟</button>
+          <button id="srcLive">实时</button>
+        </span>
+        <label style="color:var(--muted)">周期
+          <select id="days">
+            <option value="120">120 日</option>
+            <option value="250" selected>250 日</option>
+            <option value="500">500 日</option>
+          </select>
+        </label>
+        <button id="btnRefresh">↻ 刷新</button>
+        <button id="btnSettings">⚙ 设置</button>
+      </div>
+      <canvas id="chart"></canvas>
+      <div class="status" id="status">就绪</div>
+    </main>
+
+    <!-- 右：信号 / AI / 权重 / 回测 -->
+    <aside class="right">
+      <div class="card">
+        <h3>AI 实时信号</h3>
+        <div><span id="signalBadge">—</span><span id="confidence"></span></div>
+        <div class="score-wrap">
+          <div class="score-track"><div id="scoreBar"></div></div>
+          <span id="scoreVal"></span>
+          <span id="explain"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>大模型解读</h3>
+        <button id="btnAI">用大模型解读当前信号</button>
+        <div id="aiOut" class="muted">点「⚙ 设置」填入 API 地址 / Key / 模型（如 DeepSeek、OpenAI、通义），即可让大模型用自然语言解读当前多因子信号。未配置时使用内置规则解读。</div>
+      </div>
+
+      <div class="card">
+        <h3>因子权重（可调）</h3>
+        <div id="weights"></div>
+        <button id="btnReset" style="margin-top:6px;width:100%;background:var(--panel);color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:6px;cursor:pointer">重置默认权重</button>
+      </div>
+
+      <div class="card">
+        <h3>策略回测（多头）</h3>
+        <div class="metrics">
+          <div class="metric"><div class="k">策略收益</div><div class="v" id="btRet">—</div></div>
+          <div class="metric"><div class="k">最大回撤</div><div class="v" id="btDD">—</div></div>
+          <div class="metric"><div class="k">夏普比率</div><div class="v" id="btSharpe">—</div></div>
+          <div class="metric"><div class="k">胜率</div><div class="v" id="btWin">—</div></div>
+          <div class="metric"><div class="k">交易次数</div><div class="v" id="btTrades">—</div></div>
+          <div class="metric"><div class="k">买入持有</div><div class="v" id="btBH">—</div></div>
+        </div>
+        <div id="btCompare"></div>
+      </div>
+
+      <div class="card">
+        <h3>说明</h3>
+        <p class="note">
+          <span class="tag">实时行情</span>：加密用 Binance、A股用腾讯、期货用新浪公开接口，前端直连（JSONP / CORS）。<br>
+          行情接口若被拦截或超时，会自动<span class="tag">回退模拟</span>，不至于白屏。<br>
+          <span class="tag">AI 信号</span> = 多因子（趋势/动量/MACD/布林/量能）加权评分，完全可解释。<br>
+          <span class="tag">大模型解读</span> 需要自行配置 Key（存于浏览器本地，不上传服务器）。
+        </p>
+      </div>
+    </aside>
+  </div>
+
+  <!-- 设置弹窗 -->
+  <div id="modal">
+    <div class="modal-box">
+      <h2>大模型 API 设置</h2>
+      <label>API Base URL（OpenAI 兼容，需含 /v1）</label>
+      <input id="cfgBase" placeholder="https://api.deepseek.com/v1" />
+      <label>API Key</label>
+      <input id="cfgKey" type="password" placeholder="sk-..." />
+      <label>模型名</label>
+      <input id="cfgModel" placeholder="deepseek-chat" />
+      <p class="note" style="margin-top:12px">
+        示例：DeepSeek <code>https://api.deepseek.com/v1</code> + <code>deepseek-chat</code>；
+        OpenAI <code>https://api.openai.com/v1</code> + <code>gpt-4o-mini</code>；
+        通义 <code>https://dashscope.aliyuncs.com/compatible-mode/v1</code> + <code>qwen-plus</code>。
+        Key 仅存浏览器本地。<br>
+        若浏览器直连被 CORS 拦截，把 Base URL 换成你自己的代理地址即可。
+      </p>
+      <div class="actions">
+        <button class="primary" id="cfgSave">保存</button>
+        <button id="cfgClose">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22QuantAI%20%E5%AE%9E%E6%97%B6%E7%89%88%22%2C%22short_name%22%3A%22QuantAI%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230b0e14%22%2C%22theme_color%22%3A%22%230b0e14%22%7D">
+  <script>
+/* =========================================================================
+ * data.js — 模拟数据 + 技术指标 + 真实行情适配器
+ * 真实数据源：Binance(加密 CORS fetch) / 腾讯(A股 JSONP) / 新浪(期货 JSONP)
+ * ========================================================================= */
+(function (global) {
+  'use strict';
+
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function hashStr(s) {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+
+  // 标的：含模拟参数(兜底) + 真实数据源配置 real
+  const UNIVERSE = [
+    { code: 'SH600519', name: '贵州茅台',   type: 'stock',  base: 1680,  vol: 0.018, drift: 0.0004, real: { src: 'tencent',  code: 'sh600519' } },
+    { code: 'SZ300750', name: '宁德时代',   type: 'stock',  base: 195,   vol: 0.028, drift: 0.0002, real: { src: 'tencent',  code: 'sz300750' } },
+    { code: 'SH601318', name: '中国平安',   type: 'stock',  base: 48,    vol: 0.016, drift: 0.0001, real: { src: 'tencent',  code: 'sh601318' } },
+    { code: 'BTC/USDT', name: '比特币',     type: 'crypto', base: 64000, vol: 0.045, drift: 0.0009, real: { src: 'binance',  symbol: 'BTCUSDT' } },
+    { code: 'AU0',      name: '沪金主连',   type: 'future', base: 560,   vol: 0.012, drift: 0.0003, real: { src: 'sina_fut', symbol: 'AU0' } },
+    { code: 'CU0',      name: '沪铜主连',   type: 'future', base: 72000, vol: 0.015, drift: 0.0000, real: { src: 'sina_fut', symbol: 'CU0' } },
+    { code: 'IF0',      name: '沪深300主连', type: 'future', base: 3800, vol: 0.014, drift: 0.0002, real: { src: 'sina_fut', symbol: 'IF0' } },
+  ];
+
+  function generateSeries(meta, days) {
+    days = days || 250;
+    const rnd = mulberry32(hashStr(meta.code));
+    const out = [];
+    let price = meta.base;
+    const startDate = Date.now() - days * 86400000;
+    let trend = 0, trendLeft = 0;
+    for (let i = 0; i < days; i++) {
+      if (trendLeft <= 0) { trend = (rnd() - 0.5) * 2 * meta.drift * 12; trendLeft = 15 + Math.floor(rnd() * 30); }
+      trendLeft--;
+      const shock = (rnd() - 0.5) * 2 * meta.vol;
+      const ret = meta.drift + trend + shock;
+      const open = price;
+      const close = Math.max(0.01, open * (1 + ret));
+      const hi = Math.max(open, close) * (1 + rnd() * meta.vol * 0.6);
+      const lo = Math.min(open, close) * (1 - rnd() * meta.vol * 0.6);
+      const vol = Math.round((0.6 + rnd()) * 1e6 * (1 + Math.abs(ret) * 20));
+      out.push({ t: startDate + i * 86400000, o: +open.toFixed(2), h: +hi.toFixed(2), l: +lo.toFixed(2), c: +close.toFixed(2), v: vol });
+      price = close;
+    }
+    return out;
+  }
+
+  // ---------- 真实行情适配器 ----------
+  let jsonpSeq = 0;
+  function jsonp(url, name, timeout) {
+    return new Promise(function (resolve, reject) {
+      const s = document.createElement('script');
+      let done = false;
+      const clean = function () { if (s.parentNode) s.parentNode.removeChild(s); };
+      const to = setTimeout(function () { if (done) return; done = true; clean(); reject(new Error('timeout')); }, timeout || 9000);
+      s.onload = function () {
+        clearTimeout(to); if (done) return; done = true;
+        const v = window[name]; try { delete window[name]; } catch (e) {}
+        clean(); (v == null) ? reject(new Error('empty')) : resolve(v);
+      };
+      s.onerror = function () { clearTimeout(to); if (done) return; done = true; clean(); reject(new Error('network')); };
+      s.src = url; document.head.appendChild(s);
+    });
+  }
+
+  function fromTencent(meta, days) {
+    const name = '_qcb' + (++jsonpSeq);
+    const url = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?_var=' + name +
+      '&param=' + meta.real.code + ',day,,,' + Math.max(days, 250) + ',qfq';
+    return jsonp(url, name).then(function (j) {
+      const node = j && j.data && j.data[meta.real.code];
+      const arr = node && (node.qfqday || node.day);
+      if (!arr || !arr.length) throw new Error('no data');
+      return arr.slice(-days).map(function (r) {
+        return { t: Date.parse(r[0]), o: +r[1], h: +r[3], l: +r[4], c: +r[2], v: +r[5] };
+      });
+    });
+  }
+
+  function fromSinaFut(meta, days) {
+    const name = '_qcb' + (++jsonpSeq);
+    const url = 'https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20' + name +
+      '=/InnerFuturesNewService.getDailyKLine?symbol=' + meta.real.symbol;
+    return jsonp(url, name).then(function (j) {
+      if (!j || !j.length) throw new Error('no data');
+      return j.slice(-days).map(function (r) {
+        return { t: Date.parse(r.d), o: +r.o, h: +r.h, l: +r.l, c: +r.c, v: +r.v };
+      });
+    });
+  }
+
+  function fromBinance(meta, days) {
+    const url = 'https://data-api.binance.vision/api/v3/klines?symbol=' + meta.real.symbol +
+      '&interval=1d&limit=' + days;
+    return fetch(url, { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.json();
+    }).then(function (j) {
+      if (!j || !j.length) throw new Error('no data');
+      return j.map(function (k) { return { t: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5] }; });
+    });
+  }
+
+  function loadReal(meta, days) {
+    if (!meta.real) return Promise.reject(new Error('no real source'));
+    if (meta.real.src === 'tencent')  return fromTencent(meta, days);
+    if (meta.real.src === 'sina_fut') return fromSinaFut(meta, days);
+    if (meta.real.src === 'binance')  return fromBinance(meta, days);
+    return Promise.reject(new Error('unknown source'));
+  }
+
+  // ---------- 技术指标 ----------
+  function sma(arr, n) {
+    const r = new Array(arr.length).fill(null); let sum = 0;
+    for (let i = 0; i < arr.length; i++) { sum += arr[i]; if (i >= n) sum -= arr[i - n]; if (i >= n - 1) r[i] = sum / n; }
+    return r;
+  }
+  function ema(arr, n) {
+    const r = new Array(arr.length).fill(null); const k = 2 / (n + 1); let prev = null;
+    for (let i = 0; i < arr.length; i++) { if (i === 0) { r[i] = arr[i]; prev = arr[i]; continue; } prev = arr[i] * k + prev * (1 - k); r[i] = prev; }
+    return r;
+  }
+  function rsi(arr, n) {
+    n = n || 14; const r = new Array(arr.length).fill(null); let gain = 0, loss = 0;
+    for (let i = 1; i < arr.length; i++) {
+      const d = arr[i] - arr[i - 1]; const g = d > 0 ? d : 0, l = d < 0 ? -d : 0;
+      if (i <= n) { gain += g; loss += l; if (i === n) { gain /= n; loss /= n; r[i] = loss === 0 ? 100 : 100 - 100 / (1 + gain / loss); } }
+      else { gain = (gain * (n - 1) + g) / n; loss = (loss * (n - 1) + l) / n; r[i] = loss === 0 ? 100 : 100 - 100 / (1 + gain / loss); }
+    }
+    return r;
+  }
+  function macd(arr, fast, slow, sig) {
+    fast = fast || 12; slow = slow || 26; sig = sig || 9;
+    const ef = ema(arr, fast), es = ema(arr, slow);
+    const dif = arr.map(function (_, i) { return (ef[i] == null || es[i] == null) ? null : ef[i] - es[i]; });
+    const valid = dif.map(function (v) { return v == null ? 0 : v; });
+    const dea = ema(valid, sig);
+    const hist = dif.map(function (v, i) { return (v == null) ? null : v - dea[i]; });
+    return { dif: dif, dea: dea, hist: hist };
+  }
+  function bollinger(arr, n, k) {
+    n = n || 20; k = k || 2; const mid = sma(arr, n);
+    const up = new Array(arr.length).fill(null), dn = new Array(arr.length).fill(null);
+    for (let i = n - 1; i < arr.length; i++) {
+      let s = 0; for (let j = i - n + 1; j <= i; j++) s += Math.pow(arr[j] - mid[i], 2);
+      const sd = Math.sqrt(s / n); up[i] = mid[i] + k * sd; dn[i] = mid[i] - k * sd;
+    }
+    return { mid: mid, up: up, dn: dn };
+  }
+  function computeIndicators(bars) {
+    const close = bars.map(function (b) { return b.c; });
+    return {
+      ma20: sma(close, 20), ma50: sma(close, 50), ma200: sma(close, 200),
+      ema12: ema(close, 12), rsi: rsi(close, 14), macd: macd(close, 12, 26, 9),
+      boll: bollinger(close, 20, 2), close: close,
+    };
+  }
+
+  global.QData = {
+    UNIVERSE: UNIVERSE, generateSeries: generateSeries, loadReal: loadReal,
+    computeIndicators: computeIndicators, sma: sma, ema: ema, rsi: rsi, macd: macd, bollinger: bollinger,
+  };
+})(window);
+
+/* =========================================================================
+ * strategy.js — AI 信号评分 + 回测引擎（多因子可解释）
+ * ========================================================================= */
+(function (global) {
+  'use strict';
+  const DEFAULT_WEIGHTS = { trend: 0.30, momentum: 0.20, macd: 0.22, boll: 0.13, volume: 0.15 };
+  function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+
+  function subSignals(bars, ind, i) {
+    const c = bars[i].c; const s = {};
+    const ma50 = ind.ma50[i], ma200 = ind.ma200[i];
+    if (ma50 != null && ma200 != null) { const pos = (c - ma200) / ma200; s.trend = clamp(pos * 12, -1, 1) * 0.6 + (c > ma50 ? 0.4 : -0.4); }
+    else if (ma50 != null) { s.trend = (c > ma50 ? 0.4 : -0.4); }
+    else s.trend = 0;
+    const r = ind.rsi[i];
+    if (r != null) { if (r > 70) s.momentum = -((r - 70) / 30); else if (r < 30) s.momentum = (30 - r) / 30; else s.momentum = (50 - r) / 40; }
+    else s.momentum = 0;
+    const dif = ind.macd.dif[i], dea = ind.macd.dea[i], hist = ind.macd.hist[i];
+    if (dif != null && dea != null && i > 0) { const prevHist = ind.macd.hist[i - 1]; const cross = (prevHist != null) ? (hist - prevHist) : 0; s.macd = clamp((dif - dea) * 4, -1, 1) * 0.7 + clamp(cross * 20, -1, 1) * 0.3; }
+    else s.macd = 0;
+    const up = ind.boll.up[i], dn = ind.boll.dn[i];
+    if (up != null && dn != null) { const pct = (c - dn) / (up - dn); s.boll = clamp((0.5 - pct) * 2, -1, 1); }
+    else s.boll = 0;
+    let vavg = 0, cnt = 0;
+    for (let j = Math.max(0, i - 19); j <= i; j++) { vavg += bars[j].v; cnt++; }
+    vavg /= cnt; s.volume = clamp((bars[i].v / vavg - 1) * 1.2, -1, 1);
+    return s;
+  }
+
+  function scoreSeries(bars, ind, weights) {
+    weights = weights || DEFAULT_WEIGHTS;
+    const scores = new Array(bars.length).fill(0); const detail = new Array(bars.length).fill(null);
+    for (let i = 0; i < bars.length; i++) {
+      const s = subSignals(bars, ind, i); let total = 0;
+      for (const k in weights) total += (s[k] || 0) * weights[k];
+      scores[i] = clamp(total, -1, 1); detail[i] = s;
+    }
+    return { scores: scores, detail: detail };
+  }
+
+  function signalAt(bars, ind, weights) {
+    const res = scoreSeries(bars, ind, weights);
+    const last = bars.length - 1; const score = res.scores[last]; const TH = 0.18;
+    let action = 'HOLD'; if (score > TH) action = 'BUY'; else if (score < -TH) action = 'SELL';
+    return { action: action, score: score, confidence: Math.round(Math.abs(score) * 100), sub: res.detail[last], last: last };
+  }
+
+  function explainSignal(sig) {
+    const parts = []; const sub = sig.sub || {};
+    if (sub.trend > 0.2) parts.push('价格站上中长期均线，趋势偏多');
+    if (sub.trend < -0.2) parts.push('价格跌破中长期均线，趋势偏空');
+    if (sub.momentum > 0.2) parts.push('RSI 处于低位回升，动量改善');
+    if (sub.momentum < -0.2) parts.push('RSI 高位，注意超买回调');
+    if (sub.macd > 0.1) parts.push('MACD 金叉动能增强');
+    if (sub.macd < -0.1) parts.push('MACD 死叉，动能转弱');
+    if (sub.boll > 0.1) parts.push('价格贴近布林下轨，估值偏低');
+    if (sub.boll < -0.1) parts.push('价格贴近布林上轨，短期偏高');
+    if (sub.volume > 0.3) parts.push('显著放量，信号确认度提升');
+    if (!parts.length) parts.push('各因子无明显方向，建议观望');
+    return parts.join('；') + '。';
+  }
+
+  function backtest(bars, ind, weights, opts) {
+    opts = opts || {}; const enter = opts.enter || 0.20; const exit = opts.exit || -0.10;
+    const scores = scoreSeries(bars, ind, weights).scores;
+    let cash = 1, pos = 0, trades = 0, wins = 0, entryPrice = 0; const equity = []; let peak = 1, maxDD = 0;
+    const dailyRets = []; let prevEq = 1;
+    for (let i = 0; i < bars.length; i++) {
+      const price = bars[i].c; const s = scores[i];
+      if (pos === 0 && s > enter) { pos = cash / price; cash = 0; entryPrice = price; trades++; }
+      else if (pos > 0 && s < exit) { cash = pos * price; if (price > entryPrice) wins++; pos = 0; }
+      const eq = cash + pos * price; equity.push(eq);
+      if (eq > peak) peak = eq; maxDD = Math.max(maxDD, (peak - eq) / peak);
+      if (i > 0) dailyRets.push(eq / prevEq - 1); prevEq = eq;
+    }
+    const totalRet = equity[equity.length - 1] - 1;
+    const mean = dailyRets.reduce(function (a, b) { return a + b; }, 0) / (dailyRets.length || 1);
+    const variance = dailyRets.reduce(function (a, b) { return a + Math.pow(b - mean, 2); }, 0) / (dailyRets.length || 1);
+    const std = Math.sqrt(variance) || 1e-9; const sharpe = mean / std * Math.sqrt(252);
+    const winRate = trades ? wins / trades : 0;
+    const buyHold = bars[bars.length - 1].c / bars[0].c - 1;
+    return { equity: equity, totalRet: totalRet, maxDD: maxDD, sharpe: sharpe, winRate: winRate, trades: trades, buyHold: buyHold, finalEq: equity[equity.length - 1] };
+  }
+
+  global.QStrat = { DEFAULT_WEIGHTS: DEFAULT_WEIGHTS, scoreSeries: scoreSeries, signalAt: signalAt, explainSignal: explainSignal, backtest: backtest };
+})(window);
+
+/* =========================================================================
+ * chart.js — Canvas 行情图渲染
+ * ========================================================================= */
+(function (global) {
+  'use strict';
+  const UP = '#26a69a', DOWN = '#ef5350', GRID = '#1c2333';
+  const MA20 = '#f0b90b', MA50 = '#3b82f6';
+
+  function draw(canvas, bars, ind, opts) {
+    opts = opts || {}; const showBoll = opts.boll !== false;
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.clientWidth, H = canvas.clientHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H); ctx.font = '10px ui-monospace, Menlo, monospace';
+    const n = bars.length; if (n === 0) return;
+    const padR = 58, padL = 8, padT = 8;
+    const volH = H * 0.16, rsiH = H * 0.14, macdH = H * 0.16, gap = 6;
+    const mainH = H - volH - rsiH - macdH - gap * 3 - padT;
+    const mainTop = padT, mainBot = mainTop + mainH;
+    const volTop = mainBot + gap, volBot = volTop + volH;
+    const rsiTop = volBot + gap, rsiBot = rsiTop + rsiH;
+    const macdTop = rsiBot + gap, macdBot = macdTop + macdH;
+    const plotW = W - padL - padR;
+    const x = function (i) { return padL + (i + 0.5) * (plotW / n); };
+    const cw = Math.max(1, plotW / n * 0.6);
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < n; i++) {
+      lo = Math.min(lo, bars[i].l); hi = Math.max(hi, bars[i].h);
+      if (showBoll && ind.boll.up[i] != null) { lo = Math.min(lo, ind.boll.dn[i]); hi = Math.max(hi, ind.boll.up[i]); }
+    }
+    const pad = (hi - lo) * 0.06; lo -= pad; hi += pad;
+    const y = function (p) { return mainBot - (p - lo) / (hi - lo) * mainH; };
+    ctx.strokeStyle = GRID; ctx.fillStyle = '#6b7280'; ctx.lineWidth = 1;
+    for (let g = 0; g <= 4; g++) {
+      const price = lo + (hi - lo) * g / 4; const yy = y(price);
+      ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(padL + plotW, yy); ctx.stroke();
+      ctx.fillText(price.toFixed(price > 1000 ? 0 : 2), padL + plotW + 4, yy + 3);
+    }
+    for (let i = 0; i < n; i++) {
+      const b = bars[i]; const up = b.c >= b.o;
+      ctx.strokeStyle = ctx.fillStyle = up ? UP : DOWN;
+      ctx.beginPath(); ctx.moveTo(x(i), y(b.h)); ctx.lineTo(x(i), y(b.l)); ctx.stroke();
+      const yo = y(b.o), yc = y(b.c); const top = Math.min(yo, yc), hgt = Math.max(1, Math.abs(yc - yo));
+      ctx.fillRect(x(i) - cw / 2, top, cw, hgt);
+    }
+    function line(arr, color) {
+      ctx.strokeStyle = color; ctx.lineWidth = 1.2; ctx.beginPath(); let started = false;
+      for (let i = 0; i < n; i++) { if (arr[i] == null) continue; const px = x(i), py = y(arr[i]); if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py); }
+      ctx.stroke();
+    }
+    line(ind.ma20, MA20); line(ind.ma50, MA50);
+    if (showBoll) {
+      ctx.strokeStyle = 'rgba(124,92,255,0.5)'; ctx.lineWidth = 1;
+      ctx.beginPath(); let st = false;
+      for (let i = 0; i < n; i++) { if (ind.boll.up[i] == null) continue; const px = x(i), py = y(ind.boll.up[i]); st ? ctx.lineTo(px, py) : (ctx.moveTo(px, py), st = true); }
+      ctx.stroke(); ctx.beginPath(); st = false;
+      for (let i = 0; i < n; i++) { if (ind.boll.dn[i] == null) continue; const px = x(i), py = y(ind.boll.dn[i]); st ? ctx.lineTo(px, py) : (ctx.moveTo(px, py), st = true); }
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(124,92,255,0.07)'; ctx.beginPath(); st = false;
+      for (let i = 0; i < n; i++) { if (ind.boll.up[i] == null) continue; const px = x(i), py = y(ind.boll.up[i]); st ? ctx.lineTo(px, py) : (ctx.moveTo(px, py), st = true); }
+      for (let i = n - 1; i >= 0; i--) { if (ind.boll.dn[i] == null) continue; ctx.lineTo(x(i), y(ind.boll.dn[i])); }
+      ctx.closePath(); ctx.fill();
+    }
+    let vmax = 0; for (let i = 0; i < n; i++) vmax = Math.max(vmax, bars[i].v);
+    const vy = function (v) { return volBot - v / vmax * volH; };
+    for (let i = 0; i < n; i++) { const up = bars[i].c >= bars[i].o; ctx.fillStyle = up ? 'rgba(38,166,154,0.6)' : 'rgba(239,83,80,0.6)'; ctx.fillRect(x(i) - cw / 2, vy(bars[i].v), cw, volBot - vy(bars[i].v)); }
+    ctx.fillStyle = '#6b7280'; ctx.fillText('VOL', padL + 2, volTop + 10);
+
+    function drawPanel(arr, top, bot, min, max, color, label, marks) {
+      const yy = function (v) { return bot - (v - min) / (max - min) * (bot - top); };
+      ctx.strokeStyle = GRID; ctx.beginPath(); ctx.moveTo(padL, bot); ctx.lineTo(padL + plotW, bot); ctx.stroke();
+      (marks || []).forEach(function (m) {
+        ctx.strokeStyle = 'rgba(107,114,128,0.3)'; ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.moveTo(padL, yy(m)); ctx.lineTo(padL + plotW, yy(m)); ctx.stroke(); ctx.setLineDash([]);
+      });
+      ctx.strokeStyle = color; ctx.lineWidth = 1.2; ctx.beginPath(); let st = false;
+      for (let i = 0; i < n; i++) { if (arr[i] == null) continue; const px = x(i), py = yy(arr[i]); st ? ctx.lineTo(px, py) : (ctx.moveTo(px, py), st = true); }
+      ctx.stroke(); ctx.fillStyle = '#6b7280'; ctx.fillText(label, padL + 2, top + 10);
+    }
+    drawPanel(ind.rsi, rsiTop, rsiBot, 0, 100, '#f0b90b', 'RSI', [30, 70]);
+    (function drawMacd(top, bot) {
+      const mid = (top + bot) / 2; let mx = 0;
+      for (let i = 0; i < n; i++) { if (ind.macd.hist[i] != null) mx = Math.max(mx, Math.abs(ind.macd.hist[i])); }
+      mx = mx || 1;
+      const yy = function (v) { return mid - v / mx * (bot - top) / 2; };
+      ctx.strokeStyle = GRID; ctx.beginPath(); ctx.moveTo(padL, mid); ctx.lineTo(padL + plotW, mid); ctx.stroke();
+      for (let i = 0; i < n; i++) {
+        const h = ind.macd.hist[i]; if (h == null) continue;
+        ctx.fillStyle = h >= 0 ? 'rgba(38,166,154,0.7)' : 'rgba(239,83,80,0.7)';
+        const topH = h >= 0 ? yy(h) : mid; ctx.fillRect(x(i) - cw / 2, topH, cw, Math.abs(yy(h) - mid));
+      }
+      const dline = function (arr, color) { ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.beginPath(); let st = false; for (let i = 0; i < n; i++) { if (arr[i] == null) continue; const px = x(i), py = yy(arr[i]); st ? ctx.lineTo(px, py) : (ctx.moveTo(px, py), st = true); } ctx.stroke(); };
+      dline(ind.macd.dif, '#f0b90b'); dline(ind.macd.dea, '#3b82f6');
+      ctx.fillStyle = '#6b7280'; ctx.fillText('MACD', padL + 2, top + 10);
+    })(macdTop, macdBot);
+  }
+  global.QChart = { draw: draw };
+})(window);
+
+/* =========================================================================
+ * app.js — UI 交互：数据源切换 / 实时加载 / 大模型解读 / 主流程
+ * ========================================================================= */
+(function () {
+  'use strict';
+  const QD = window.QData, QS = window.QStrat;
+  const UNIVERSE = QD.UNIVERSE;
+
+  const state = {
+    code: UNIVERSE[0].code, bars: null, ind: null, sig: null,
+    weights: Object.assign({}, QS.DEFAULT_WEIGHTS), days: 250, source: 'sim',
+  };
+  const realCache = new Map();   // code|days -> bars
+  const inflight = new Map();
+  const $ = function (s) { return document.querySelector(s); };
+
+  function meta(code) { return UNIVERSE.find(function (u) { return u.code === code; }); }
+  function setStatus(t) { $('#status').textContent = t; }
+  function setBadge(t, color) { const b = $('#srcBadge'); b.textContent = t; b.style.color = color || 'var(--muted)'; }
+
+  // --- 取数：模拟 或 实时(带回退) ---
+  function ensureReal(m, days) {
+    const key = m.code + '|' + days;
+    if (realCache.has(key)) return Promise.resolve(realCache.get(key));
+    if (inflight.has(key)) return inflight.get(key);
+    const p = QD.loadReal(m, days).then(function (bars) {
+      if (!bars || bars.length < 30) throw new Error('too few bars');
+      realCache.set(key, bars); inflight.delete(key); return bars;
+    }).catch(function (e) { inflight.delete(key); throw e; });
+    inflight.set(key, p); return p;
+  }
+
+  function fallback(m, days) { return QD.generateSeries(m, days); }
+
+  function selectSymbol(code) {
+    state.code = code; const m = meta(code);
+    document.querySelectorAll('.wl-item').forEach(function (e) { e.classList.remove('active'); });
+    const act = document.querySelector('.wl-item[data-code="' + code + '"]'); if (act) act.classList.add('active');
+
+    if (state.source === 'sim') {
+      setBadge('模拟', 'var(--muted)'); setStatus('模拟行情 · ' + m.name);
+      state.bars = fallback(m, state.days); finish();
+    } else {
+      setBadge('实时…', 'var(--accent)'); setStatus('正在拉取 ' + m.name + ' 实时行情…');
+      ensureReal(m, state.days).then(function (bars) {
+        state.bars = bars; setBadge('实时', '#26a69a'); setStatus('实时行情 · ' + m.name + ' · ' + bars.length + ' 根K线');
+        finish();
+      }).catch(function () {
+        state.bars = fallback(m, state.days); setBadge('实时失败→模拟', '#ef5350');
+        setStatus('实时接口不可用，已回退模拟：' + m.name); finish();
+      });
+    }
+  }
+
+  function finish() { state.ind = QD.computeIndicators(state.bars); recompute(); renderHeader(); }
+
+  function recompute() {
+    state.sig = QS.signalAt(state.bars, state.ind, state.weights);
+    renderSignal(); renderBacktest();
+    window.QChart.draw($('#chart'), state.bars, state.ind, {});
+  }
+
+  function renderHeader() {
+    const m = meta(state.code); const bars = state.bars;
+    const last = bars[bars.length - 1].c, prev = bars[bars.length - 2] ? bars[bars.length - 2].c : last;
+    const chg = prev ? (last - prev) / prev * 100 : 0; const col = chg >= 0 ? '#26a69a' : '#ef5350';
+    $('#symName').textContent = m.name + ' (' + m.code + ')';
+    $('#symType').textContent = ({ stock: '股票', future: '期货', crypto: '数字资产' })[m.type] || m.type;
+    $('#lastPrice').textContent = fmt(last);
+    $('#lastPrice').style.color = col;
+    $('#chg').textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%';
+    $('#chg').style.color = col;
+  }
+  function fmt(v) { return v >= 1000 ? v.toFixed(2) : v.toFixed(v < 10 ? 4 : 2); }
+
+  function renderSignal() {
+    const sig = state.sig;
+    const map = { BUY: ['买入', '#26a69a'], SELL: ['卖出', '#ef5350'], HOLD: ['持有/观望', '#f0b90b'] };
+    const lb = map[sig.action]; const badge = $('#signalBadge');
+    badge.textContent = lb[0]; badge.style.background = lb[1];
+    $('#confidence').textContent = '置信度 ' + sig.confidence + '%';
+    $('#scoreBar').style.width = Math.abs(sig.score) * 100 + '%';
+    $('#scoreBar').style.background = sig.score >= 0 ? '#26a69a' : '#ef5350';
+    $('#scoreVal').textContent = '综合评分 ' + sig.score.toFixed(2);
+    $('#explain').textContent = QS.explainSignal(sig);
+  }
+
+  function renderBacktest() {
+    const r = QS.backtest(state.bars, state.ind, state.weights, { enter: 0.20, exit: -0.10 });
+    const pct = function (x) { return (x * 100).toFixed(1) + '%'; };
+    const set = function (id, v, good) { const el = $('#' + id); el.textContent = v; if (good !== undefined) el.style.color = good ? '#26a69a' : '#ef5350'; };
+    set('btRet', pct(r.totalRet), r.totalRet >= 0); set('btDD', pct(r.maxDD), false);
+    set('btSharpe', r.sharpe.toFixed(2), r.sharpe >= 0); set('btWin', pct(r.winRate), r.winRate >= 0.5);
+    set('btTrades', r.trades); set('btBH', pct(r.buyHold), r.buyHold >= 0);
+    const cmp = $('#btCompare'); const diff = r.totalRet - r.buyHold;
+    cmp.textContent = (diff >= 0 ? '跑赢' : '跑输') + '买入持有 ' + pct(Math.abs(diff)); cmp.style.color = diff >= 0 ? '#26a69a' : '#ef5350';
+  }
+
+  function renderWatchlist() {
+    const ul = $('#watchlist'); ul.innerHTML = '';
+    UNIVERSE.forEach(function (u) {
+      let bars = realCache.get(u.code + '|' + state.days);
+      const live = !!bars;
+      if (!bars) bars = QD.generateSeries(u, state.days);
+      const last = bars[bars.length - 1].c, prev = bars[bars.length - 2] ? bars[bars.length - 2].c : last;
+      const chg = prev ? (last - prev) / prev * 100 : 0;
+      const ind = QD.computeIndicators(bars); const sig = QS.signalAt(bars, ind, state.weights);
+      const map = { BUY: ['买', '#26a69a'], SELL: ['卖', '#ef5350'], HOLD: ['持', '#f0b90b'] };
+      const li = document.createElement('li');
+      li.className = 'wl-item' + (u.code === state.code ? ' active' : ''); li.dataset.code = u.code;
+      li.innerHTML = '<span class="wl-name">' + u.name + (live ? '<span class="wl-live">●实时</span>' : '') + '<small>' + u.code + '</small></span>' +
+        '<span class="wl-price">' + fmt(last) + '<small style="color:' + (chg >= 0 ? '#26a69a' : '#ef5350') + '">' + (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%</small></span>' +
+        '<span class="wl-sig" style="background:' + map[sig.action][1] + '">' + map[sig.action][0] + '</span>';
+      li.onclick = function () { selectSymbol(u.code); };
+      ul.appendChild(li);
+    });
+  }
+
+  function refreshWatchlistLive() {
+    if (state.source !== 'live') { renderWatchlist(); return; }
+    setStatus('后台加载自选实时行情…');
+    (function next(i) {
+      if (i >= UNIVERSE.length) { setStatus('自选实时行情已更新'); return; }
+      const u = UNIVERSE[i];
+      ensureReal(u, state.days).then(function () { renderWatchlist(); next(i + 1); })
+        .catch(function () { next(i + 1); });
+    })(0);
+  }
+
+  function buildWeightSliders() {
+    const box = $('#weights'); box.innerHTML = '';
+    Object.keys(state.weights).forEach(function (k) {
+      const row = document.createElement('div'); row.className = 'w-row';
+      row.innerHTML = '<label>' + k + '</label><input type="range" min="0" max="0.6" step="0.01" value="' + state.weights[k] + '" data-k="' + k + '"><span class="w-val">' + state.weights[k].toFixed(2) + '</span>';
+      row.querySelector('input').oninput = function (e) {
+        state.weights[k] = parseFloat(e.target.value); row.querySelector('.w-val').textContent = state.weights[k].toFixed(2);
+        recompute(); renderWatchlist();
+      };
+      box.appendChild(row);
+    });
+  }
+
+  // ---------- 大模型解读 ----------
+  function getLLM() { try { return JSON.parse(localStorage.getItem('qai_llm') || '{}'); } catch (e) { return {}; } }
+  function setLLM(o) { localStorage.setItem('qai_llm', JSON.stringify(o)); }
+
+  function buildPrompt() {
+    const m = meta(state.code); const b = state.bars; const n = b.length;
+    const last = b[n - 1], prev = b[n - 2] || last;
+    const chg = prev ? (last.c - prev.c) / prev.c * 100 : 0;
+    const s = state.sig.sub || {};
+    const closes = b.slice(-10).map(function (x) { return x.c.toFixed(2); }).join(', ');
+    return '你是资深的量化交易分析师。请基于以下多因子信号，用简洁的中文给出解读与操作建议（含风险提示），不要编造数据。\n\n'
+      + '标的：' + m.name + '（' + m.code + '，' + m.type + '）\n'
+      + '最新收盘：' + last.c + '，当日涨跌：' + chg.toFixed(2) + '%\n'
+      + '近10日收盘：' + closes + '\n'
+      + '因子读数（-1~1）：趋势 ' + nf(s.trend) + '，动量 ' + nf(s.momentum) + '，MACD ' + nf(s.macd) + '，布林 ' + nf(s.boll) + '，量能 ' + nf(s.volume) + '\n'
+      + '综合评分：' + state.sig.score.toFixed(2) + '，系统信号：' + state.sig.action + '（置信度 ' + state.sig.confidence + '%）\n'
+      + '回测：策略收益 ' + (QS.backtest(b, state.ind, state.weights, {}).totalRet * 100).toFixed(1) + '%，'
+      + '买入持有 ' + ((b[n - 1].c / b[0].c - 1) * 100).toFixed(1) + '%\n\n'
+      + '请输出：1) 信号解读 2) 关键风险 3) 操作建议。控制在 200 字内。';
+  }
+  function nf(v) { return (v == null ? 0 : v).toFixed(2); }
+
+  function askLLM() {
+    const cfg = getLLM();
+    const out = $('#aiOut');
+    if (!cfg.apiKey || !cfg.baseUrl) {
+      out.classList.remove('muted');
+      out.textContent = '尚未配置大模型。请点「⚙ 设置」填写 API 地址 / Key / 模型后重试。\n\n（以下为内置规则解读）\n' + QS.explainSignal(state.sig);
+      return;
+    }
+    const model = cfg.model || 'deepseek-chat';
+    const btn = $('#btnAI'); btn.disabled = true; btn.textContent = '解读中…';
+    out.classList.remove('muted'); out.textContent = '正在请求大模型…';
+    fetch(cfg.baseUrl.replace(/\/$/, '') + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
+      body: JSON.stringify({ model: model, temperature: 0.3, messages: [{ role: 'user', content: buildPrompt() }] }),
+    }).then(function (r) {
+      if (!r.ok) return r.text().then(function (t) { throw new Error('HTTP ' + r.status + ' ' + t.slice(0, 120)); });
+      return r.json();
+    }).then(function (j) {
+      const txt = j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+      out.textContent = txt || ('模型返回为空。原始响应：' + JSON.stringify(j).slice(0, 300));
+    }).catch(function (e) {
+      out.textContent = '调用失败：' + (e && e.message ? e.message : e) + '\n\n常见原因：Key/地址有误；或浏览器直连被 CORS 拦截（把 Base URL 换成你的代理地址）。\n\n（以下为内置规则解读）\n' + QS.explainSignal(state.sig);
+    }).finally(function () { btn.disabled = false; btn.textContent = '用大模型解读当前信号'; });
+  }
+
+  // ---------- 设置弹窗 ----------
+  function openSettings() {
+    const cfg = getLLM();
+    $('#cfgBase').value = cfg.baseUrl || ''; $('#cfgKey').value = cfg.apiKey || ''; $('#cfgModel').value = cfg.model || '';
+    $('#modal').classList.add('show');
+  }
+  function closeSettings() { $('#modal').classList.remove('show'); }
+
+  function bind() {
+    $('#srcSim').onclick = function () { if (state.source === 'sim') return; state.source = 'sim'; this.classList.add('on'); $('#srcLive').classList.remove('on'); renderWatchlist(); selectSymbol(state.code); };
+    $('#srcLive').onclick = function () { if (state.source === 'live') return; state.source = 'live'; this.classList.add('on'); $('#srcSim').classList.remove('on'); selectSymbol(state.code); refreshWatchlistLive(); };
+    $('#days').onchange = function (e) { state.days = parseInt(e.target.value); realCache.clear(); selectSymbol(state.code); if (state.source === 'live') refreshWatchlistLive(); else renderWatchlist(); };
+    $('#btnRefresh').onclick = function () { realCache.clear(); selectSymbol(state.code); if (state.source === 'live') refreshWatchlistLive(); };
+    $('#btnReset').onclick = function () { state.weights = Object.assign({}, QS.DEFAULT_WEIGHTS); buildWeightSliders(); recompute(); renderWatchlist(); };
+    $('#btnAI').onclick = askLLM;
+    $('#btnSettings').onclick = openSettings;
+    $('#cfgSave').onclick = function () { setLLM({ baseUrl: $('#cfgBase').value.trim(), apiKey: $('#cfgKey').value.trim(), model: $('#cfgModel').value.trim() }); closeSettings(); };
+    $('#cfgClose').onclick = closeSettings;
+    $('#modal').onclick = function (e) { if (e.target === $('#modal')) closeSettings(); };
+    let rt; window.addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(function () { if (state.bars) window.QChart.draw($('#chart'), state.bars, state.ind, {}); }, 120); });
+  }
+
+  function init() { buildWeightSliders(); renderWatchlist(); bind(); selectSymbol(state.code); }
+  document.addEventListener('DOMContentLoaded', init);
+})();
+  </script>
+</body>
+</html>
