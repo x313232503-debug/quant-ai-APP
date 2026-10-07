@@ -24,7 +24,8 @@ body {
 .section-title { padding: 10px 16px 6px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
 ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
   .wl-tools { display: flex; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
-  .wl-tools input, .wl-tools select { flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font-size: 13px; min-width: 0; }
+  .wl-seg { width: 100%; }
+  .wl-seg button { flex: 1; font-size: 12px; padding: 6px 4px; }
   .wl-count { float: right; font-size: 11px; color: var(--muted); font-weight: normal; }
 .wl-item { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 9px 14px; cursor: pointer; border-left: 2px solid transparent; }
 .wl-item:hover { background: var(--panel2); }
@@ -166,12 +167,12 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
       <div class="section-title">自选标的 <span id="wlCount" class="wl-count"></span></div>
       <div class="wl-tools">
         <input id="wlSearch" type="search" placeholder="搜索名称/代码…" />
-        <select id="wlType">
-          <option value="all">全部</option>
-          <option value="stock">股票</option>
-          <option value="future">期货</option>
-          <option value="crypto">数字资产</option>
-        </select>
+        <div class="seg wl-seg" id="wlType">
+          <button data-v="all" class="on">全部</button>
+          <button data-v="stock">股票</button>
+          <button data-v="future">期货</button>
+          <button data-v="crypto">数字</button>
+        </div>
       </div>
       <div class="screener">
         <div class="scr-head">
@@ -1240,9 +1241,10 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
   function finish() { state.ind = QD.computeIndicators(state.bars); recompute(); renderHeader(); }
 
   function recompute() {
-    state.sig = QS.signalAt(state.bars, state.ind, state.weights);
-    renderSignal(); renderBacktest();
-    const m = meta(state.code); const env = ensureMarketEnv(); const fc = forecastSymbol(m, state.bars, env);
+    const m = meta(state.code); const strat = strategyFor(m.type);
+    if (strat) { state.sig = strat.signalAt(state.bars, state.ind, state.weights); renderSignal(); renderBacktest(); }
+    else { state.sig = null; renderFutureStrategyNote(); }
+    const env = ensureMarketEnv(); const fc = forecastSymbol(m, state.bars, env);
     const fBias = fc.raw > 10 ? 'up' : fc.raw < -10 ? 'down' : 'flat';
     window.QChart.draw($('#chart'), state.bars, state.ind, { forecast: fc.proj, forecastBias: fBias });
     renderForecast(fc);
@@ -1260,6 +1262,20 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     $('#chg').style.color = col;
   }
   function fmt(v) { return v >= 1000 ? v.toFixed(2) : v.toFixed(v < 10 ? 4 : 2); }
+
+  function strategyFor(type) { return type === 'future' ? null : QS; }
+
+  function renderFutureStrategyNote() {
+    const badge = $('#signalBadge');
+    badge.textContent = '期货策略待接入'; badge.style.background = 'var(--muted)';
+    $('#confidence').textContent = '';
+    $('#scoreBar').style.width = '0%';
+    $('#scoreVal').textContent = '';
+    $('#explain').textContent = '期货品种将使用你后续指定的独立策略，当前暂只提供看盘与趋势预测。';
+    $('#weights').innerHTML = '<p class="note">期货品种使用独立策略，因子权重滑块待接入。</p>';
+    ['btRet', 'btDD', 'btSharpe', 'btWin', 'btTrades', 'btBH'].forEach(function (id) { $('#' + id).textContent = '—'; });
+    $('#btCompare').textContent = '期货专用回测即将上线';
+  }
 
   function renderSignal() {
     const sig = state.sig;
@@ -1298,7 +1314,8 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
   function makeWlItem(u, bars, live, m) {
     const last = bars[bars.length - 1].c, prev = bars[bars.length - 2] ? bars[bars.length - 2].c : last;
     const chg = prev ? (last - prev) / prev * 100 : 0;
-    const ind = QD.computeIndicators(bars); const sig = QS.signalAt(bars, ind, state.weights);
+    const isFut = u.type === 'future';
+    const ind = QD.computeIndicators(bars); const sig = isFut ? null : QS.signalAt(bars, ind, state.weights);
     const map = { BUY: ['买', '#26a69a'], SELL: ['卖', '#ef5350'], HOLD: ['持', '#f0b90b'] };
     let metricsLine = '';
     if (m) {
@@ -1309,7 +1326,8 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     li.className = 'wl-item' + (u.code === state.code ? ' active' : ''); li.dataset.code = u.code;
     li.innerHTML = '<span class="wl-name">' + u.name + (live ? '<span class="wl-live">●实时</span>' : '') + '<small>' + u.code + '</small>' + metricsLine + '</span>' +
       '<span class="wl-price">' + fmt(last) + '<small style="color:' + (chg >= 0 ? '#26a69a' : '#ef5350') + '">' + (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%</small></span>' +
-      '<span class="wl-sig" style="background:' + map[sig.action][1] + '">' + map[sig.action][0] + '</span>';
+      (isFut ? '<span class="wl-sig" style="background:var(--muted)">待策略</span>'
+             : '<span class="wl-sig" style="background:' + map[sig.action][1] + '">' + map[sig.action][0] + '</span>');
     li.onclick = function () { selectSymbol(u.code); };
     return li;
   }
@@ -1345,6 +1363,8 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
   }
 
   function buildWeightSliders() {
+    const m0 = meta(state.code);
+    if (m0.type === 'future') { renderFutureStrategyNote(); return; }
     const box = $('#weights'); box.innerHTML = '';
     Object.keys(state.weights).forEach(function (k) {
       const row = document.createElement('div'); row.className = 'w-row';
@@ -1365,17 +1385,22 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     const m = meta(state.code); const b = state.bars; const n = b.length;
     const last = b[n - 1], prev = b[n - 2] || last;
     const chg = prev ? (last.c - prev.c) / prev.c * 100 : 0;
-    const s = state.sig.sub || {};
+    const s = state.sig ? (state.sig.sub || {}) : {};
+    const strat = strategyFor(m.type);
     const closes = b.slice(-10).map(function (x) { return x.c.toFixed(2); }).join(', ');
-    return '你是资深的量化交易分析师。请基于以下多因子信号，用简洁的中文给出解读与操作建议（含风险提示），不要编造数据。\n\n'
+    let body = '你是资深的量化交易分析师。请基于以下多因子信号，用简洁的中文给出解读与操作建议（含风险提示），不要编造数据。\n\n'
       + '标的：' + m.name + '（' + m.code + '，' + m.type + '）\n'
       + '最新收盘：' + last.c + '，当日涨跌：' + chg.toFixed(2) + '%\n'
-      + '近10日收盘：' + closes + '\n'
-      + '因子读数（-1~1）：趋势 ' + nf(s.trend) + '，动量 ' + nf(s.momentum) + '，MACD ' + nf(s.macd) + '，布林 ' + nf(s.boll) + '，量能 ' + nf(s.volume) + '\n'
-      + '综合评分：' + state.sig.score.toFixed(2) + '，系统信号：' + state.sig.action + '（置信度 ' + state.sig.confidence + '%）\n'
-      + '回测：策略收益 ' + (QS.backtest(b, state.ind, state.weights, {}).totalRet * 100).toFixed(1) + '%，'
-      + '买入持有 ' + ((b[n - 1].c / b[0].c - 1) * 100).toFixed(1) + '%\n\n'
-      + '请输出：1) 信号解读 2) 关键风险 3) 操作建议。控制在 200 字内。';
+      + '近10日收盘：' + closes + '\n';
+    if (strat && state.sig) {
+      body += '因子读数（-1~1）：趋势 ' + nf(s.trend) + '，动量 ' + nf(s.momentum) + '，MACD ' + nf(s.macd) + '，布林 ' + nf(s.boll) + '，量能 ' + nf(s.volume) + '\n'
+        + '综合评分：' + state.sig.score.toFixed(2) + '，系统信号：' + state.sig.action + '（置信度 ' + state.sig.confidence + '%）\n'
+        + '回测：策略收益 ' + (strat.backtest(b, state.ind, state.weights, {}).totalRet * 100).toFixed(1) + '%，'
+        + '买入持有 ' + ((b[n - 1].c / b[0].c - 1) * 100).toFixed(1) + '%\n';
+    } else {
+      body += '（期货品种暂未接入专属策略，以下为通用技术面描述）\n';
+    }
+    return body + '\n请输出：1) 信号解读 2) 关键风险 3) 操作建议。控制在 200 字内。';
   }
   function nf(v) { return (v == null ? 0 : v).toFixed(2); }
 
@@ -1384,7 +1409,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     const out = $('#aiOut');
     if (!cfg.apiKey || !cfg.baseUrl) {
       out.classList.remove('muted');
-      out.textContent = '尚未配置大模型。请点「⚙ 设置」填写 API 地址 / Key / 模型后重试。\n\n（以下为内置规则解读）\n' + QS.explainSignal(state.sig);
+      out.textContent = '尚未配置大模型。请点「⚙ 设置」填写 API 地址 / Key / 模型后重试。\n\n（以下为内置规则解读）\n' + (state.sig ? QS.explainSignal(state.sig) : '（期货品种暂用通用解读，专属策略待接入）');
       return;
     }
     const model = cfg.model || 'deepseek-chat';
@@ -1401,7 +1426,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
       const txt = j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
       out.textContent = txt || ('模型返回为空。原始响应：' + JSON.stringify(j).slice(0, 300));
     }).catch(function (e) {
-      out.textContent = '调用失败：' + (e && e.message ? e.message : e) + '\n\n常见原因：Key/地址有误；或浏览器直连被 CORS 拦截（把 Base URL 换成你的代理地址）。\n\n（以下为内置规则解读）\n' + QS.explainSignal(state.sig);
+      out.textContent = '调用失败：' + (e && e.message ? e.message : e) + '\n\n常见原因：Key/地址有误；或浏览器直连被 CORS 拦截（把 Base URL 换成你的代理地址）。\n\n（以下为内置规则解读）\n' + (state.sig ? QS.explainSignal(state.sig) : '（期货品种暂用通用解读，专属策略待接入）');
     }).finally(function () { btn.disabled = false; btn.textContent = '用大模型解读当前信号'; });
   }
 
@@ -1417,7 +1442,12 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     $('#srcSim').onclick = function () { if (state.source === 'sim') return; state.source = 'sim'; this.classList.add('on'); $('#srcLive').classList.remove('on'); renderWatchlist(); selectSymbol(state.code); };
     $('#srcLive').onclick = function () { if (state.source === 'live') return; state.source = 'live'; this.classList.add('on'); $('#srcSim').classList.remove('on'); selectSymbol(state.code); refreshWatchlistLive(); };
     $('#wlSearch').addEventListener('input', function (e) { state.search = e.target.value; renderWatchlist(); });
-    $('#wlType').addEventListener('change', function (e) { state.typeFilter = e.target.value; renderWatchlist(); });
+    $('#wlType').addEventListener('click', function (e) {
+      const b = e.target.closest('button'); if (!b) return;
+      state.typeFilter = b.dataset.v;
+      Array.from(this.children).forEach(function (c) { c.classList.toggle('on', c === b); });
+      renderWatchlist();
+    });
     $('#days').onchange = function (e) { state.days = parseInt(e.target.value); realCache.clear(); selectSymbol(state.code); if (state.source === 'live') refreshWatchlistLive(); else renderWatchlist(); };
     $('#btnRefresh').onclick = function () { realCache.clear(); selectSymbol(state.code); if (state.source === 'live') refreshWatchlistLive(); };
     $('#btnReset').onclick = function () { state.weights = Object.assign({}, QS.DEFAULT_WEIGHTS); buildWeightSliders(); recompute(); renderWatchlist(); };
