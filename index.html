@@ -202,8 +202,8 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
         <span id="chg">—</span>
         <span class="spacer"></span>
         <span class="seg">
-          <button id="srcSim" class="on">模拟</button>
-          <button id="srcLive">实时</button>
+          <button id="srcSim">模拟</button>
+          <button id="srcLive" class="on">实时</button>
         </span>
         <label style="color:var(--muted)">周期
           <select id="days">
@@ -854,7 +854,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
 
   const state = {
     code: UNIVERSE[0].code, bars: null, ind: null, sig: null,
-    weights: Object.assign({}, QS.DEFAULT_WEIGHTS), days: 250, source: 'sim',
+    weights: Object.assign({}, QS.DEFAULT_WEIGHTS), days: 250, source: 'live',
     search: '', typeFilter: 'all',
   };
   const realCache = new Map();   // code|days -> bars
@@ -1173,7 +1173,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     });
   }
 
-  function init() { buildWeightSliders(); renderWatchlist(); bind(); selectSymbol(state.code); }
+  function init() { buildWeightSliders(); renderWatchlist(); bind(); selectSymbol(state.code); if (state.source === 'live') refreshWatchlistLive(); }
   document.addEventListener('DOMContentLoaded', init);
 })();
   </script>
