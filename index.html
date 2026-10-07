@@ -23,6 +23,9 @@ body {
 .brand p { color: var(--muted); font-size: 11px; margin-top: 3px; }
 .section-title { padding: 10px 16px 6px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
 ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
+  .wl-tools { display: flex; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .wl-tools input, .wl-tools select { flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font-size: 13px; min-width: 0; }
+  .wl-count { float: right; font-size: 11px; color: var(--muted); font-weight: normal; }
 .wl-item { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 9px 14px; cursor: pointer; border-left: 2px solid transparent; }
 .wl-item:hover { background: var(--panel2); }
 .wl-item.active { background: var(--panel2); border-left-color: var(--accent); }
@@ -107,7 +110,16 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
         <h1><span class="ai">Quant</span>AI 终端</h1>
         <p>实时行情 · 多因子信号 · 回测 · 大模型解读</p>
       </div>
-      <div class="section-title">自选标的</div>
+      <div class="section-title">自选标的 <span id="wlCount" class="wl-count"></span></div>
+      <div class="wl-tools">
+        <input id="wlSearch" type="search" placeholder="搜索名称/代码…" />
+        <select id="wlType">
+          <option value="all">全部</option>
+          <option value="stock">股票</option>
+          <option value="future">期货</option>
+          <option value="crypto">数字资产</option>
+        </select>
+      </div>
       <ul id="watchlist"></ul>
     </aside>
 
@@ -241,9 +253,170 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     { code: 'SZ300750', name: '宁德时代',   type: 'stock',  base: 195,   vol: 0.028, drift: 0.0002, real: { src: 'tencent',  code: 'sz300750' } },
     { code: 'SH601318', name: '中国平安',   type: 'stock',  base: 48,    vol: 0.016, drift: 0.0001, real: { src: 'tencent',  code: 'sh601318' } },
     { code: 'BTC/USDT', name: '比特币',     type: 'crypto', base: 64000, vol: 0.045, drift: 0.0009, real: { src: 'binance',  symbol: 'BTCUSDT' } },
-    { code: 'AU0',      name: '沪金主连',   type: 'future', base: 560,   vol: 0.012, drift: 0.0003, real: { src: 'sina_fut', symbol: 'AU0' } },
-    { code: 'CU0',      name: '沪铜主连',   type: 'future', base: 72000, vol: 0.015, drift: 0.0000, real: { src: 'sina_fut', symbol: 'CU0' } },
-    { code: 'IF0',      name: '沪深300主连', type: 'future', base: 3800, vol: 0.014, drift: 0.0002, real: { src: 'sina_fut', symbol: 'IF0' } },
+    { code: 'SH601988', name: '中国银行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601988' } },
+    { code: 'SH601658', name: '邮储银行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601658' } },
+    { code: 'SH600919', name: '江苏银行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600919' } },
+    { code: 'SH601838', name: '成都银行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601838' } },
+    { code: 'SH601166', name: '兴业银行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601166' } },
+    { code: 'SH600926', name: '杭州银行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600926' } },
+    { code: 'SH601009', name: '南京银行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601009' } },
+    { code: 'SH601998', name: '中信银行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601998' } },
+    { code: 'SH601818', name: '光大银行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601818' } },
+    { code: 'SH601169', name: '北京银行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601169' } },
+    { code: 'SH601077', name: '渝农商行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601077' } },
+    { code: 'SH601825', name: '沪农商行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601825' } },
+    { code: 'SZ002142', name: '宁波银行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz002142' } },
+    { code: 'SH600000', name: '浦发银行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600000' } },
+    { code: 'SH600015', name: '华夏银行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600015' } },
+    { code: 'SZ000001', name: '平安银行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz000001' } },
+    { code: 'SH600016', name: '民生银行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600016' } },
+    { code: 'SH601128', name: '常熟银行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601128' } },
+    { code: 'SH601187', name: '厦门银行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601187' } },
+    { code: 'SZ002839', name: '张家港行', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz002839' } },
+    { code: 'SH601628', name: '中国人寿', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601628' } },
+    { code: 'SH601601', name: '中国太保', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601601' } },
+    { code: 'SH601319', name: '中国人保', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601319' } },
+    { code: 'SH601336', name: '新华保险', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601336' } },
+    { code: 'SZ000627', name: '天茂集团', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz000627' } },
+    { code: 'SH600900', name: '长江电力', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600900' } },
+    { code: 'SH600025', name: '华能水电', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600025' } },
+    { code: 'SH601985', name: '中国核电', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601985' } },
+    { code: 'SZ003816', name: '中国广核', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz003816' } },
+    { code: 'SH600886', name: '国投电力', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600886' } },
+    { code: 'SH600011', name: '华能国际', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600011' } },
+    { code: 'SH600795', name: '国电电力', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600795' } },
+    { code: 'SH600027', name: '华电国际', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600027' } },
+    { code: 'SH601991', name: '大唐发电', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601991' } },
+    { code: 'SH600023', name: '浙能电力', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600023' } },
+    { code: 'SH600642', name: '申能股份', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600642' } },
+    { code: 'SZ000027', name: '深圳能源', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz000027' } },
+    { code: 'SZ000883', name: '湖北能源', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz000883' } },
+    { code: 'SZ000600', name: '建投能源', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz000600' } },
+    { code: 'SH600744', name: '华银电力', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600744' } },
+    { code: 'SZ002608', name: '江苏国信', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz002608' } },
+    { code: 'SZ002039', name: '黔源电力', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz002039' } },
+    { code: 'SH601158', name: '重庆水务', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601158' } },
+    { code: 'SZ000598', name: '兴蓉环境', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz000598' } },
+    { code: 'SH600461', name: '洪城环境', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600461' } },
+    { code: 'SZ000544', name: '中原环保', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz000544' } },
+    { code: 'SZ000685', name: '中山公用', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz000685' } },
+    { code: 'SH600168', name: '武汉控股', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600168' } },
+    { code: 'SZ300070', name: '碧水源', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz300070' } },
+    { code: 'SH601368', name: '绿城水务', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601368' } },
+    { code: 'SH601199', name: '江南水务', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601199' } },
+    { code: 'SH601817', name: '海峡环保', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601817' } },
+    { code: 'SH603759', name: '海天股份', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh603759' } },
+    { code: 'SH603903', name: '中持股份', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh603903' } },
+    { code: 'SZ301127', name: '天源环保', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz301127' } },
+    { code: 'SH605081', name: '太和水利', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh605081' } },
+    { code: 'SH600941', name: '中国移动', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600941' } },
+    { code: 'SH601728', name: '中国电信', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601728' } },
+    { code: 'SH600050', name: '中国联通', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600050' } },
+    { code: 'SH600845', name: '宝信软件', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600845' } },
+    { code: 'SZ002281', name: '光迅科技', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz002281' } },
+    { code: 'SZ000063', name: '中兴通讯', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz000063' } },
+    { code: 'SH601869', name: '长飞光纤', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601869' } },
+    { code: 'SH600522', name: '中天科技', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600522' } },
+    { code: 'SH600487', name: '亨通光电', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600487' } },
+    { code: 'SZ002938', name: '鹏鼎控股', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz002938' } },
+    { code: 'SZ300442', name: '润泽科技', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz300442' } },
+    { code: 'SZ300394', name: '天孚通信', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz300394' } },
+    { code: 'SZ300308', name: '中际旭创', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz300308' } },
+    { code: 'SZ300502', name: '新易盛', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz300502' } },
+    { code: 'SZ002463', name: '沪电股份', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz002463' } },
+    { code: 'SZ002104', name: '恒宝股份', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz002104' } },
+    { code: 'SH601006', name: '大秦铁路', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601006' } },
+    { code: 'SZ001965', name: '招商公路', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz001965' } },
+    { code: 'SH600018', name: '上港集团', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600018' } },
+    { code: 'SZ001872', name: '招商港口', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz001872' } },
+    { code: 'SH601880', name: '大连港', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601880' } },
+    { code: 'SH600057', name: '厦门象屿', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600057' } },
+    { code: 'SH600755', name: '厦门国贸', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600755' } },
+    { code: 'SH603128', name: '华贸物流', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh603128' } },
+    { code: 'SZ000828', name: '东莞控股', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz000828' } },
+    { code: 'SH601518', name: '吉林高速', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh601518' } },
+    { code: 'SH600017', name: '日照港', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600017' } },
+    { code: 'SH600026', name: '中远海能', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600026' } },
+    { code: 'SZ002468', name: '申通快递', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz002468' } },
+    { code: 'SZ002120', name: '韵达股份', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz002120' } },
+    { code: 'SH603056', name: '德邦股份', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh603056' } },
+    { code: 'SH600125', name: '铁龙物流', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600125' } },
+    { code: 'SZ002889', name: '东方嘉盛', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz002889' } },
+    { code: 'SZ002930', name: '宏川智慧', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz002930' } },
+    { code: 'SZ000547', name: '航天发展', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sz000547' } },
+    { code: 'SH600271', name: '航天信息', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600271' } },
+    { code: 'SH603885', name: '吉祥航空', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh603885' } },
+    { code: 'SH603000', name: '人民网', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh603000' } },
+    { code: 'SH600703', name: '三安光电', type: 'stock',  base: 10, vol: 0.02, drift: 0.0001, real: { src: 'tencent',  code: 'sh600703' } },
+    { code: 'AU0', name: '沪金主连', type: 'future', base: 560, vol: 0.012, drift: 0.0003, real: { src: 'sina_fut', symbol: 'AU0' } },
+    { code: 'AG0', name: '沪银主连', type: 'future', base: 7800, vol: 0.018, drift: 0.0002, real: { src: 'sina_fut', symbol: 'AG0' } },
+    { code: 'CU0', name: '沪铜主连', type: 'future', base: 72000, vol: 0.015, drift: 0, real: { src: 'sina_fut', symbol: 'CU0' } },
+    { code: 'AL0', name: '沪铝主连', type: 'future', base: 19000, vol: 0.015, drift: 0, real: { src: 'sina_fut', symbol: 'AL0' } },
+    { code: 'ZN0', name: '沪锌主连', type: 'future', base: 23000, vol: 0.018, drift: 0, real: { src: 'sina_fut', symbol: 'ZN0' } },
+    { code: 'PB0', name: '沪铅主连', type: 'future', base: 16500, vol: 0.016, drift: 0, real: { src: 'sina_fut', symbol: 'PB0' } },
+    { code: 'NI0', name: '沪镍主连', type: 'future', base: 130000, vol: 0.025, drift: 0, real: { src: 'sina_fut', symbol: 'NI0' } },
+    { code: 'SN0', name: '沪锡主连', type: 'future', base: 250000, vol: 0.025, drift: 0, real: { src: 'sina_fut', symbol: 'SN0' } },
+    { code: 'RB0', name: '螺纹主连', type: 'future', base: 3700, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'RB0' } },
+    { code: 'HC0', name: '热卷主连', type: 'future', base: 3800, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'HC0' } },
+    { code: 'FU0', name: '燃油主连', type: 'future', base: 3500, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'FU0' } },
+    { code: 'BU0', name: '沥青主连', type: 'future', base: 3700, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'BU0' } },
+    { code: 'RU0', name: '橡胶主连', type: 'future', base: 14000, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'RU0' } },
+    { code: 'SP0', name: '纸浆主连', type: 'future', base: 5600, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'SP0' } },
+    { code: 'SS0', name: '不锈钢主连', type: 'future', base: 14000, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'SS0' } },
+    { code: 'AO0', name: '氧化铝主连', type: 'future', base: 3200, vol: 0.03, drift: 0, real: { src: 'sina_fut', symbol: 'AO0' } },
+    { code: 'BR0', name: '合成橡胶主连', type: 'future', base: 12000, vol: 0.03, drift: 0, real: { src: 'sina_fut', symbol: 'BR0' } },
+    { code: 'SC0', name: '原油主连', type: 'future', base: 600, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'SC0' } },
+    { code: 'NR0', name: '20号胶主连', type: 'future', base: 11000, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'NR0' } },
+    { code: 'BC0', name: '国际铜主连', type: 'future', base: 65000, vol: 0.015, drift: 0, real: { src: 'sina_fut', symbol: 'BC0' } },
+    { code: 'LU0', name: '低硫燃油主连', type: 'future', base: 4000, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'LU0' } },
+    { code: 'A0', name: '豆一主连', type: 'future', base: 4500, vol: 0.015, drift: 0, real: { src: 'sina_fut', symbol: 'A0' } },
+    { code: 'B0', name: '豆二主连', type: 'future', base: 4000, vol: 0.015, drift: 0, real: { src: 'sina_fut', symbol: 'B0' } },
+    { code: 'M0', name: '豆粕主连', type: 'future', base: 3000, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'M0' } },
+    { code: 'Y0', name: '豆油主连', type: 'future', base: 8000, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'Y0' } },
+    { code: 'P0', name: '棕榈主连', type: 'future', base: 7500, vol: 0.025, drift: 0, real: { src: 'sina_fut', symbol: 'P0' } },
+    { code: 'C0', name: '玉米主连', type: 'future', base: 2500, vol: 0.015, drift: 0, real: { src: 'sina_fut', symbol: 'C0' } },
+    { code: 'CS0', name: '玉米淀粉主连', type: 'future', base: 2900, vol: 0.015, drift: 0, real: { src: 'sina_fut', symbol: 'CS0' } },
+    { code: 'JD0', name: '鸡蛋主连', type: 'future', base: 4000, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'JD0' } },
+    { code: 'JM0', name: '焦煤主连', type: 'future', base: 1700, vol: 0.03, drift: 0, real: { src: 'sina_fut', symbol: 'JM0' } },
+    { code: 'J0', name: '焦炭主连', type: 'future', base: 2300, vol: 0.03, drift: 0, real: { src: 'sina_fut', symbol: 'J0' } },
+    { code: 'I0', name: '铁矿主连', type: 'future', base: 800, vol: 0.03, drift: 0, real: { src: 'sina_fut', symbol: 'I0' } },
+    { code: 'L0', name: '塑料主连', type: 'future', base: 8000, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'L0' } },
+    { code: 'PP0', name: '聚丙烯主连', type: 'future', base: 7500, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'PP0' } },
+    { code: 'V0', name: 'PVC主连', type: 'future', base: 6000, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'V0' } },
+    { code: 'EG0', name: '乙二醇主连', type: 'future', base: 4500, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'EG0' } },
+    { code: 'EB0', name: '苯乙烯主连', type: 'future', base: 8500, vol: 0.025, drift: 0, real: { src: 'sina_fut', symbol: 'EB0' } },
+    { code: 'PG0', name: '液化石油气主连', type: 'future', base: 4500, vol: 0.025, drift: 0, real: { src: 'sina_fut', symbol: 'PG0' } },
+    { code: 'LH0', name: '生猪主连', type: 'future', base: 16000, vol: 0.025, drift: 0, real: { src: 'sina_fut', symbol: 'LH0' } },
+    { code: 'RR0', name: '粳米主连', type: 'future', base: 2600, vol: 0.015, drift: 0, real: { src: 'sina_fut', symbol: 'RR0' } },
+    { code: 'CF0', name: '棉花主连', type: 'future', base: 16000, vol: 0.018, drift: 0, real: { src: 'sina_fut', symbol: 'CF0' } },
+    { code: 'SR0', name: '白糖主连', type: 'future', base: 6500, vol: 0.018, drift: 0, real: { src: 'sina_fut', symbol: 'SR0' } },
+    { code: 'OI0', name: '菜油主连', type: 'future', base: 9000, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'OI0' } },
+    { code: 'RM0', name: '菜粕主连', type: 'future', base: 2800, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'RM0' } },
+    { code: 'TA0', name: 'PTA主连', type: 'future', base: 5800, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'TA0' } },
+    { code: 'MA0', name: '甲醇主连', type: 'future', base: 2500, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'MA0' } },
+    { code: 'FG0', name: '玻璃主连', type: 'future', base: 1600, vol: 0.03, drift: 0, real: { src: 'sina_fut', symbol: 'FG0' } },
+    { code: 'SF0', name: '硅铁主连', type: 'future', base: 7000, vol: 0.03, drift: 0, real: { src: 'sina_fut', symbol: 'SF0' } },
+    { code: 'SM0', name: '锰硅主连', type: 'future', base: 7000, vol: 0.03, drift: 0, real: { src: 'sina_fut', symbol: 'SM0' } },
+    { code: 'UR0', name: '尿素主连', type: 'future', base: 2100, vol: 0.025, drift: 0, real: { src: 'sina_fut', symbol: 'UR0' } },
+    { code: 'SA0', name: '纯碱主连', type: 'future', base: 2000, vol: 0.03, drift: 0, real: { src: 'sina_fut', symbol: 'SA0' } },
+    { code: 'PF0', name: '短纤主连', type: 'future', base: 7500, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'PF0' } },
+    { code: 'PK0', name: '花生主连', type: 'future', base: 10000, vol: 0.02, drift: 0, real: { src: 'sina_fut', symbol: 'PK0' } },
+    { code: 'SH0', name: '烧碱主连', type: 'future', base: 2500, vol: 0.03, drift: 0, real: { src: 'sina_fut', symbol: 'SH0' } },
+    { code: 'PX0', name: '对二甲苯主连', type: 'future', base: 8500, vol: 0.03, drift: 0, real: { src: 'sina_fut', symbol: 'PX0' } },
+    { code: 'IF0', name: '沪深300主连', type: 'future', base: 3800, vol: 0.014, drift: 0.0002, real: { src: 'sina_fut', symbol: 'IF0' } },
+    { code: 'IH0', name: '上证50主连', type: 'future', base: 2600, vol: 0.014, drift: 0.0002, real: { src: 'sina_fut', symbol: 'IH0' } },
+    { code: 'IC0', name: '中证500主连', type: 'future', base: 5800, vol: 0.015, drift: 0.0002, real: { src: 'sina_fut', symbol: 'IC0' } },
+    { code: 'IM0', name: '中证1000主连', type: 'future', base: 6000, vol: 0.016, drift: 0.0002, real: { src: 'sina_fut', symbol: 'IM0' } },
+    { code: 'TF0', name: '五年国债主连', type: 'future', base: 103, vol: 0.005, drift: 0, real: { src: 'sina_fut', symbol: 'TF0' } },
+    { code: 'T0', name: '十年国债主连', type: 'future', base: 102, vol: 0.005, drift: 0, real: { src: 'sina_fut', symbol: 'T0' } },
+    { code: 'TS0', name: '二年国债主连', type: 'future', base: 101, vol: 0.004, drift: 0, real: { src: 'sina_fut', symbol: 'TS0' } },
+    { code: 'TL0', name: '三十年国债主连', type: 'future', base: 105, vol: 0.008, drift: 0, real: { src: 'sina_fut', symbol: 'TL0' } },
+    { code: 'SI0', name: '工业硅主连', type: 'future', base: 13000, vol: 0.03, drift: 0, real: { src: 'sina_fut', symbol: 'SI0' } },
+    { code: 'LC0', name: '碳酸锂主连', type: 'future', base: 150000, vol: 0.035, drift: 0, real: { src: 'sina_fut', symbol: 'LC0' } },
+    { code: 'SA_MAIN', name: '纯碱主力合约', type: 'future', base: 2000, vol: 0.03, drift: 0, real: { src: 'sina_fut_auto', variety: 'SA', rank: 1 } },
+    { code: 'SA_SEC', name: '纯碱次主力', type: 'future', base: 2000, vol: 0.03, drift: 0, real: { src: 'sina_fut_auto', variety: 'SA', rank: 2 } },
+    { code: 'SH_MAIN', name: '烧碱主力合约', type: 'future', base: 2500, vol: 0.03, drift: 0, real: { src: 'sina_fut_auto', variety: 'SH', rank: 1 } },
+    { code: 'SH_SEC', name: '烧碱次主力', type: 'future', base: 2500, vol: 0.03, drift: 0, real: { src: 'sina_fut_auto', variety: 'SH', rank: 2 } },
   ];
 
   function generateSeries(meta, days) {
@@ -301,16 +474,44 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     });
   }
 
-  function fromSinaFut(meta, days) {
+  function sinaKline(symbol, days) {
     const name = '_qcb' + (++jsonpSeq);
     const url = 'https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20' + name +
-      '=/InnerFuturesNewService.getDailyKLine?symbol=' + meta.real.symbol;
+      '=/InnerFuturesNewService.getDailyKLine?symbol=' + symbol;
     return jsonp(url, name).then(function (j) {
       if (!j || !j.length) throw new Error('no data');
       return j.slice(-days).map(function (r) {
         return { t: Date.parse(r.d), o: +r.o, h: +r.h, l: +r.l, c: +r.c, v: +r.v };
       });
     });
+  }
+  function fromSinaFut(meta, days) { return sinaKline(meta.real.symbol, days); }
+
+  // 纯碱/烧碱 主力合约(rank=1)与次主力(rank=2)自动展期：
+  // 从当前月份向前枚举合约代码，取“最近交易日足够新”的前两个活跃合约。
+  // 近月合约交割退市后，下一月合约自然前移为新的主力/次主力，无需手动维护。
+  const _futAuto = {};
+  function resolveSinaFutAuto(variety, rank) {
+    const c = _futAuto[variety]; const now = Date.now();
+    if (c && now - c.ts < 7 * 864e5 && c.list && c.list.length >= rank) return Promise.resolve(c.list[rank - 1]);
+    const d = new Date(); let y = d.getFullYear() % 100, m = d.getMonth() + 1; const cands = [];
+    for (let i = 0; i < 24; i++) { let yy = y, mm = m + i; while (mm > 12) { mm -= 12; yy++; } cands.push(variety + String(yy).padStart(2, '0') + String(mm).padStart(2, '0')); }
+    const active = [];
+    return (function step(k) {
+      if (k >= cands.length || active.length >= 2) {
+        _futAuto[variety] = { ts: now, list: active };
+        if (active.length < rank) return Promise.reject(new Error('合约不足'));
+        return Promise.resolve(active[rank - 1]);
+      }
+      return sinaKline(cands[k], 3).then(function (bars) {
+        const last = bars[bars.length - 1];
+        if (last && now - last.t < 120 * 864e5) active.push(cands[k]);
+        return step(k + 1);
+      }).catch(function () { return step(k + 1); });
+    })(0);
+  }
+  function fromSinaFutAuto(meta, days) {
+    return resolveSinaFutAuto(meta.real.variety, meta.real.rank).then(function (sym) { return sinaKline(sym, days); });
   }
 
   function fromBinance(meta, days) {
@@ -329,6 +530,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     if (!meta.real) return Promise.reject(new Error('no real source'));
     if (meta.real.src === 'tencent')  return fromTencent(meta, days);
     if (meta.real.src === 'sina_fut') return fromSinaFut(meta, days);
+    if (meta.real.src === 'sina_fut_auto') return fromSinaFutAuto(meta, days);
     if (meta.real.src === 'binance')  return fromBinance(meta, days);
     return Promise.reject(new Error('unknown source'));
   }
@@ -584,6 +786,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
   const state = {
     code: UNIVERSE[0].code, bars: null, ind: null, sig: null,
     weights: Object.assign({}, QS.DEFAULT_WEIGHTS), days: 250, source: 'sim',
+    search: '', typeFilter: 'all',
   };
   const realCache = new Map();   // code|days -> bars
   const inflight = new Map();
@@ -671,34 +874,55 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     cmp.textContent = (diff >= 0 ? '跑赢' : '跑输') + '买入持有 ' + pct(Math.abs(diff)); cmp.style.color = diff >= 0 ? '#26a69a' : '#ef5350';
   }
 
-  function renderWatchlist() {
-    const ul = $('#watchlist'); ul.innerHTML = '';
-    UNIVERSE.forEach(function (u) {
-      let bars = realCache.get(u.code + '|' + state.days);
-      const live = !!bars;
-      if (!bars) bars = QD.generateSeries(u, state.days);
-      const last = bars[bars.length - 1].c, prev = bars[bars.length - 2] ? bars[bars.length - 2].c : last;
-      const chg = prev ? (last - prev) / prev * 100 : 0;
-      const ind = QD.computeIndicators(bars); const sig = QS.signalAt(bars, ind, state.weights);
-      const map = { BUY: ['买', '#26a69a'], SELL: ['卖', '#ef5350'], HOLD: ['持', '#f0b90b'] };
-      const li = document.createElement('li');
-      li.className = 'wl-item' + (u.code === state.code ? ' active' : ''); li.dataset.code = u.code;
-      li.innerHTML = '<span class="wl-name">' + u.name + (live ? '<span class="wl-live">●实时</span>' : '') + '<small>' + u.code + '</small></span>' +
-        '<span class="wl-price">' + fmt(last) + '<small style="color:' + (chg >= 0 ? '#26a69a' : '#ef5350') + '">' + (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%</small></span>' +
-        '<span class="wl-sig" style="background:' + map[sig.action][1] + '">' + map[sig.action][0] + '</span>';
-      li.onclick = function () { selectSymbol(u.code); };
-      ul.appendChild(li);
+  let wlMap = {};
+  function visibleUniverse() {
+    const q = (state.search || '').trim().toLowerCase();
+    const tf = state.typeFilter || 'all';
+    return UNIVERSE.filter(function (u) {
+      if (tf !== 'all' && u.type !== tf) return false;
+      if (!q) return true;
+      return u.name.toLowerCase().indexOf(q) >= 0 || u.code.toLowerCase().indexOf(q) >= 0;
     });
   }
-
+  function makeWlItem(u, bars, live) {
+    const last = bars[bars.length - 1].c, prev = bars[bars.length - 2] ? bars[bars.length - 2].c : last;
+    const chg = prev ? (last - prev) / prev * 100 : 0;
+    const ind = QD.computeIndicators(bars); const sig = QS.signalAt(bars, ind, state.weights);
+    const map = { BUY: ['买', '#26a69a'], SELL: ['卖', '#ef5350'], HOLD: ['持', '#f0b90b'] };
+    const li = document.createElement('li');
+    li.className = 'wl-item' + (u.code === state.code ? ' active' : ''); li.dataset.code = u.code;
+    li.innerHTML = '<span class="wl-name">' + u.name + (live ? '<span class="wl-live">●实时</span>' : '') + '<small>' + u.code + '</small></span>' +
+      '<span class="wl-price">' + fmt(last) + '<small style="color:' + (chg >= 0 ? '#26a69a' : '#ef5350') + '">' + (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%</small></span>' +
+      '<span class="wl-sig" style="background:' + map[sig.action][1] + '">' + map[sig.action][0] + '</span>';
+    li.onclick = function () { selectSymbol(u.code); };
+    return li;
+  }
+  function renderWatchlist() {
+    const ul = $('#watchlist'); ul.innerHTML = ''; wlMap = {};
+    const vis = visibleUniverse();
+    vis.forEach(function (u) {
+      let bars = realCache.get(u.code + '|' + state.days);
+      const live = !!bars; if (!bars) bars = QD.generateSeries(u, state.days);
+      const li = makeWlItem(u, bars, live); ul.appendChild(li); wlMap[u.code] = li;
+    });
+    const c = $('#wlCount'); if (c) c.textContent = vis.length + ' / ' + UNIVERSE.length;
+  }
+  function updateWlItem(u) {
+    const li = wlMap[u.code]; if (!li) return;
+    const bars = realCache.get(u.code + '|' + state.days); if (!bars) return;
+    const ni = makeWlItem(u, bars, true); li.replaceWith(ni); wlMap[u.code] = ni;
+  }
   function refreshWatchlistLive() {
     if (state.source !== 'live') { renderWatchlist(); return; }
+    renderWatchlist();  // 先用模拟价铺满，再并发刷实时
     setStatus('后台加载自选实时行情…');
-    (function next(i) {
-      if (i >= UNIVERSE.length) { setStatus('自选实时行情已更新'); return; }
-      const u = UNIVERSE[i];
-      ensureReal(u, state.days).then(function () { renderWatchlist(); next(i + 1); })
-        .catch(function () { next(i + 1); });
+    const list = UNIVERSE.slice(); const B = 12;
+    (function batch(k) {
+      if (k >= list.length) { setStatus('自选实时行情已更新 (' + UNIVERSE.length + ')'); return; }
+      const slice = list.slice(k, k + B);
+      Promise.all(slice.map(function (u) {
+        return ensureReal(u, state.days).then(function () { updateWlItem(u); }).catch(function () {});
+      })).then(function () { batch(k + B); });
     })(0);
   }
 
@@ -774,6 +998,8 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
   function bind() {
     $('#srcSim').onclick = function () { if (state.source === 'sim') return; state.source = 'sim'; this.classList.add('on'); $('#srcLive').classList.remove('on'); renderWatchlist(); selectSymbol(state.code); };
     $('#srcLive').onclick = function () { if (state.source === 'live') return; state.source = 'live'; this.classList.add('on'); $('#srcSim').classList.remove('on'); selectSymbol(state.code); refreshWatchlistLive(); };
+    $('#wlSearch').addEventListener('input', function (e) { state.search = e.target.value; renderWatchlist(); });
+    $('#wlType').addEventListener('change', function (e) { state.typeFilter = e.target.value; renderWatchlist(); });
     $('#days').onchange = function (e) { state.days = parseInt(e.target.value); realCache.clear(); selectSymbol(state.code); if (state.source === 'live') refreshWatchlistLive(); else renderWatchlist(); };
     $('#btnRefresh').onclick = function () { realCache.clear(); selectSymbol(state.code); if (state.source === 'live') refreshWatchlistLive(); };
     $('#btnReset').onclick = function () { state.weights = Object.assign({}, QS.DEFAULT_WEIGHTS); buildWeightSliders(); recompute(); renderWatchlist(); };
