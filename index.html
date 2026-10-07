@@ -101,6 +101,21 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
 .scr-ref-body .man { color: var(--muted); }
 .wl-metrics { display: block; color: var(--muted); font-weight: 400; font-size: 10px; margin-top: 2px; }
 
+/* 趋势预测 */
+.fc-sub { font-size: 10px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+#fcBadge { display: inline-block; padding: 2px 10px; border-radius: 6px; color: #0b0e14; font-weight: 700; font-size: 12px; }
+#fcConf { color: var(--muted); font-size: 11px; margin-left: 8px; }
+.fc-score { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.fc-track { flex: 1; height: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+#fcScoreBar { height: 100%; border-radius: 4px; background: #26a69a; width: 0; }
+#fcChart { width: 100%; height: 132px; margin: 8px 0 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; display: block; }
+.fc-target { font-size: 11px; color: var(--accent); margin: 2px 0 6px; }
+.fc-drivers { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.fc-drv { display: grid; grid-template-columns: 62px 36px 1fr; align-items: baseline; gap: 6px; }
+.fc-drv-name { color: var(--muted); font-size: 11px; }
+.fc-drv-dir { font-weight: 700; font-size: 11px; }
+.fc-drv-txt { color: var(--text); font-size: 10.5px; line-height: 1.3; }
+
 /* modal */
 #modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; place-items: center; z-index: 50; padding: 16px; }
 #modal.show { display: grid; }
@@ -235,6 +250,19 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
         <h3>大模型解读</h3>
         <button id="btnAI">用大模型解读当前信号</button>
         <div id="aiOut" class="muted">点「⚙ 设置」填入 API 地址 / Key / 模型（如 DeepSeek、OpenAI、通义），即可让大模型用自然语言解读当前多因子信号。未配置时使用内置规则解读。</div>
+      </div>
+
+      <div class="card" id="fcCard">
+        <h3>趋势预测 <span class="fc-sub">历史 · 时间节点 · 市场情绪</span></h3>
+        <div><span id="fcBadge">—</span><span id="fcConf"></span></div>
+        <div class="fc-score">
+          <div class="fc-track"><div id="fcScoreBar"></div></div>
+          <span id="fcScoreVal"></span>
+        </div>
+        <canvas id="fcChart"></canvas>
+        <div id="fcTarget" class="fc-target"></div>
+        <div id="fcDrivers" class="fc-drivers"></div>
+        <p class="note">基于历史走势、当前时间节点（星期/季末季节性）与全市场情绪（广度/动量/波动）的启发式打分，<b>非投资建议</b>；预测区间为统计置信带，非确定性目标。</p>
       </div>
 
       <div class="card">
@@ -917,6 +945,128 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
   function setStatus(t) { $('#status').textContent = t; }
   function setBadge(t, color) { const b = $('#srcBadge'); b.textContent = t; b.style.color = color || 'var(--muted)'; }
 
+  /* ---- 趋势预测：历史 + 时间节点 + 环境/情绪（启发式，纯前端） ---- */
+  let marketEnv = null, marketEnvTs = 0;
+  function smaArr(a, n) {
+    const out = new Array(a.length).fill(null); let s = 0;
+    for (let i = 0; i < a.length; i++) { s += a[i]; if (i >= n) s -= a[i - n]; if (i >= n - 1) out[i] = s / n; }
+    return out;
+  }
+  function getBarsFor(u) { const k = u.code + '|' + state.days; const c = realCache.get(k); return c || QD.generateSeries(u, state.days); }
+  function computeMarketEnv() {
+    let up = 0, tot = 0, momSum = 0, atrs = [];
+    for (const u of UNIVERSE) {
+      const bars = getBarsFor(u); const n = bars.length; if (n < 25) continue;
+      const close = bars.map(function (b) { return b.c; }); const ma20 = smaArr(close, 20); const last = n - 1;
+      const sl = (ma20[last] != null && ma20[last - 5] != null) ? (ma20[last] - ma20[last - 5]) / ma20[last - 5] : 0;
+      if (ma20[last] != null && close[last] > ma20[last] && sl > 0) up++;
+      tot++; if (last >= 20) momSum += close[last] / close[last - 20] - 1;
+      let tr = 0, cnt = 0; for (let i = Math.max(1, last - 13); i <= last; i++) { tr += bars[i].h - bars[i].l; cnt++; }
+      atrs.push((tr / cnt) / close[last]);
+    }
+    atrs.sort(function (a, b) { return a - b; });
+    const med = atrs.length ? atrs[Math.floor(atrs.length / 2)] : 0;
+    return { breadth: tot ? up / tot : 0.5, avgMom: tot ? momSum / tot : 0, volRegime: med, sample: tot };
+  }
+  function ensureMarketEnv(force) {
+    const now = Date.now();
+    if (!force && marketEnv && now - marketEnvTs < 5 * 60e3) return marketEnv;
+    marketEnv = computeMarketEnv(); marketEnvTs = now; return marketEnv;
+  }
+  function seasonFactors(bars) {
+    const n = bars.length, rets = [];
+    for (let i = 1; i < n; i++) rets.push(bars[i].c / bars[i - 1].c - 1);
+    const dowS = [0,0,0,0,0,0,0], dowC = [0,0,0,0,0,0,0];
+    for (let i = 1; i < n; i++) { const d = new Date(bars[i].t).getDay(); dowS[d] += rets[i - 1]; dowC[d]++; }
+    const dowAvg = dowS.map(function (s, i) { return dowC[i] ? s / dowC[i] : 0; });
+    const dt = new Date(bars[n - 1].t); const todayDow = dt.getDay();
+    const q = Math.floor(dt.getMonth() / 3), qs = new Date(dt.getFullYear(), q * 3, 1), qe = new Date(dt.getFullYear(), q * 3 + 3, 0);
+    const qpos = (dt - qs) / (qe - qs);
+    return { dowAvg: dowAvg, todayDow: todayDow, dowEdge: dowAvg[todayDow], qpos: qpos, nearQuarterEnd: qpos > 0.85 };
+  }
+  function forecastSymbol(m, bars, env) {
+    env = env || ensureMarketEnv();
+    const n = bars.length, close = bars.map(function (b) { return b.c; }), last = n - 1, c = close[last];
+    const ma20 = smaArr(close, 20), ma50 = smaArr(close, 50), ma200 = smaArr(close, 200);
+    let trend = 0; const sl20 = (ma20[last] != null && ma20[last - 5] != null) ? (ma20[last] - ma20[last - 5]) / ma20[last - 5] : 0;
+    if (ma20[last] != null) trend += (c > ma20[last]) ? 0.4 : -0.4;
+    if (ma50[last] != null) trend += (c > ma50[last]) ? 0.2 : -0.2;
+    if (ma200[last] != null) trend += (c > ma200[last]) ? 0.2 : -0.2;
+    trend += Math.max(-0.2, Math.min(0.2, sl20 * 8));
+    const m5 = last >= 5 ? c / close[last - 5] - 1 : 0, m20 = last >= 20 ? c / close[last - 20] - 1 : 0;
+    const momentum = Math.max(-1, Math.min(1, m20 * 2.2)) * 0.6 + Math.max(-1, Math.min(1, m5 * 4)) * 0.4;
+    let hi = -Infinity, lo = Infinity; for (let i = 0; i < n; i++) { if (close[i] > hi) hi = close[i]; if (close[i] < lo) lo = close[i]; }
+    const pos52 = (c - lo) / ((hi - lo) || 1); const revert = Math.max(-1, Math.min(1, (0.5 - pos52) * 1.6));
+    const rets = []; for (let i = 1; i < n; i++) rets.push(Math.log(bars[i].c / bars[i - 1].c));
+    let tr = 0, cnt = 0; for (let i = Math.max(1, last - 13); i <= last; i++) { tr += bars[i].h - bars[i].l; cnt++; }
+    const atr = (tr / cnt) / c; const mean = rets.reduce(function (a, b) { return a + b; }, 0) / (rets.length || 1);
+    let varr = 0; for (const r of rets) varr += (r - mean) * (r - mean); const sd = Math.sqrt(varr / (rets.length || 1));
+    const seas = seasonFactors(bars);
+    const seasScore = Math.max(-1, Math.min(1, seas.dowEdge * 30)) * 0.6 + (seas.nearQuarterEnd ? 0.1 : 0);
+    const envScore = Math.max(-1, Math.min(1, (env.breadth - 0.5) * 2)) * 0.7 + Math.max(-1, Math.min(1, env.avgMom * 3)) * 0.3;
+    const W = { trend: 0.30, momentum: 0.18, revert: 0.12, seas: 0.10, env: 0.20 };
+    let raw = trend * W.trend + momentum * W.momentum + revert * W.revert + seasScore * W.seas + envScore * W.env;
+    raw = Math.max(-1, Math.min(1, raw)); const score = Math.round(raw * 100);
+    const dirs = [trend, momentum, envScore];
+    const pos = dirs.filter(function (x) { return x > 0.05; }).length, neg = dirs.filter(function (x) { return x < -0.05; }).length;
+    const agree = Math.max(pos, neg) / dirs.length;
+    let conf = 0.45 + 0.30 * Math.abs(raw) + 0.20 * agree - atr * 4; conf = Math.max(0.1, Math.min(0.95, conf));
+    const mu = Math.log(1 + Math.max(-0.01, Math.min(0.01, m20 / 20))); const horizon = 20; const proj = [];
+    for (let i = 0; i <= horizon; i++) { const mid = c * Math.exp(mu * i), band = Math.exp(1.0 * sd * Math.sqrt(i)); proj.push({ i: i, mid: mid, hi: mid * band, lo: mid / band }); }
+    const drivers = [
+      { name: '趋势结构', v: trend, txt: (trend > 0.1 ? '均线多头排列，趋势偏多' : trend < -0.1 ? '均线空头/价格承压' : '趋势中性') },
+      { name: '动量', v: momentum, txt: (momentum > 0.1 ? '近期走强' : momentum < -0.1 ? '近期走弱' : '动量中性') + '（20日 ' + (m20 * 100).toFixed(1) + '%）' },
+      { name: '估值位置', v: revert, txt: '52周位置 ' + (pos52 * 100).toFixed(0) + '%，' + (pos52 > 0.8 ? '偏高谨慎' : pos52 < 0.25 ? '偏低关注' : '中性') },
+      { name: '时间节点', v: seasScore, txt: '周' + ['日','一','二','三','四','五','六'][seas.todayDow] + '历史平均' + (seas.dowEdge >= 0 ? '偏多' : '偏空') + (seas.nearQuarterEnd ? ' · 临近季末' : '') },
+      { name: '市场情绪', v: envScore, txt: '全市场 ' + (env.breadth * 100).toFixed(0) + '% 站上MA20，环境' + (envScore > 0.1 ? '风险偏好上行' : envScore < -0.1 ? '风险偏好下行' : '中性') },
+      { name: '波动率', v: -atr, txt: '近14日ATR ' + (atr * 100).toFixed(1) + '%，' + (atr > 0.03 ? '高波动不确定' : '波动温和') }
+    ];
+    let regime = '震荡'; if (score > 35) regime = '看涨'; else if (score > 10) regime = '震荡偏多'; else if (score < -10) regime = '震荡偏空'; else if (score < -35) regime = '看跌';
+    return { score: score, regime: regime, confidence: Math.round(conf * 100), proj: proj, drivers: drivers, pos52: pos52, atr: atr, env: env, seas: seas, m20: m20 };
+  }
+  function regimeColor(r) { return ({ '看涨': '#26a69a', '震荡偏多': '#7dd3a8', '震荡': '#f0b90b', '震荡偏空': '#f59e7a', '看跌': '#ef5350' })[r] || '#f0b90b'; }
+  function renderForecast() {
+    if (!state.bars) return; const m = meta(state.code); const env = ensureMarketEnv(); const fc = forecastSymbol(m, state.bars, env);
+    const badge = $('#fcBadge'); badge.textContent = fc.regime; badge.style.background = regimeColor(fc.regime);
+    $('#fcConf').textContent = '置信度 ' + fc.confidence + '%';
+    const sb = $('#fcScoreBar'); sb.style.width = Math.abs(fc.score) + '%'; sb.style.background = fc.score >= 0 ? '#26a69a' : '#ef5350';
+    $('#fcScoreVal').textContent = '综合趋势分 ' + (fc.score > 0 ? '+' : '') + fc.score;
+    const p20 = fc.proj[20], base = state.bars[state.bars.length - 1].c, upPct = (p20.mid / base - 1) * 100;
+    $('#fcTarget').textContent = '20日中性目标 ' + fmt(p20.mid) + '（' + (upPct >= 0 ? '+' : '') + upPct.toFixed(1) + '%）· 区间 ' + fmt(p20.lo) + '~' + fmt(p20.hi);
+    const dl = $('#fcDrivers'); dl.innerHTML = '';
+    fc.drivers.forEach(function (d) {
+      const dir = d.v > 0.05 ? '偏多' : d.v < -0.05 ? '偏空' : '中性';
+      const col = d.v > 0.05 ? '#26a69a' : d.v < -0.05 ? '#ef5350' : '#9aa4b2';
+      const row = document.createElement('div'); row.className = 'fc-drv';
+      row.innerHTML = '<span class="fc-drv-name">' + d.name + '</span><span class="fc-drv-dir" style="color:' + col + '">' + dir + '</span><span class="fc-drv-txt">' + d.txt + '</span>';
+      dl.appendChild(row);
+    });
+    drawForecastCone($('#fcChart'), state.bars, fc);
+  }
+  function drawForecastCone(canvas, bars, fc) {
+    if (!canvas) return; const dpr = window.devicePixelRatio || 1; const W = canvas.clientWidth, H = canvas.clientHeight; if (!W || !H) return;
+    canvas.width = W * dpr; canvas.height = H * dpr; const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    const histN = 60, hist = bars.slice(-histN), proj = fc.proj, pn = proj.length;
+    const all = []; hist.forEach(function (b) { all.push(b.c); }); proj.forEach(function (p) { all.push(p.hi); all.push(p.lo); });
+    let lo = Math.min.apply(null, all), hi = Math.max.apply(null, all); const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+    const padL = 6, padR = 6, padT = 6, padB = 14, plotW = W - padL - padR, total = histN + pn;
+    const x = function (i) { return padL + (i + 0.5) * (plotW / total); }, y = function (p) { return padT + (1 - (p - lo) / (hi - lo)) * (H - padT - padB); };
+    ctx.strokeStyle = '#1c2333'; ctx.lineWidth = 1; for (let g = 0; g <= 3; g++) { const yy = padT + (H - padT - padB) * g / 3; ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(padL + plotW, yy); ctx.stroke(); }
+    const splitX = x(histN - 1); ctx.strokeStyle = 'rgba(240,185,11,0.4)'; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(splitX, padT); ctx.lineTo(splitX, H - padB); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(124,92,255,0.12)'; ctx.beginPath();
+    for (let i = 0; i < pn; i++) ctx.lineTo(x(histN + i), y(proj[i].hi));
+    for (let i = pn - 1; i >= 0; i--) ctx.lineTo(x(histN + i), y(proj[i].lo));
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(124,92,255,0.55)'; ctx.lineWidth = 1; ctx.beginPath();
+    for (let i = 0; i < pn; i++) { const xx = x(histN + i), yy = y(proj[i].hi); i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy); } ctx.stroke();
+    ctx.beginPath(); for (let i = 0; i < pn; i++) { const xx = x(histN + i), yy = y(proj[i].lo); i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy); } ctx.stroke();
+    ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 1.4; ctx.beginPath();
+    hist.forEach(function (b, i) { const xx = x(i), yy = y(b.c); i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy); }); ctx.stroke();
+    ctx.strokeStyle = '#f0b90b'; ctx.setLineDash([5, 3]); ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(x(histN - 1), y(hist[hist.length - 1].c));
+    for (let i = 0; i < pn; i++) ctx.lineTo(x(histN + i), y(proj[i].mid)); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#6b7280'; ctx.font = '9px ui-monospace, monospace'; ctx.fillText('过去' + hist.length + '日 · 未来20日预测区间', padL, H - 3);
+  }
+
   // --- 取数：模拟 或 实时(带回退) ---
   function ensureReal(m, days) {
     const key = m.code + '|' + days;
@@ -955,7 +1105,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
 
   function recompute() {
     state.sig = QS.signalAt(state.bars, state.ind, state.weights);
-    renderSignal(); renderBacktest();
+    renderSignal(); renderBacktest(); renderForecast();
     window.QChart.draw($('#chart'), state.bars, state.ind, {});
   }
 
@@ -1047,7 +1197,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     setStatus('后台加载自选实时行情…');
     const list = UNIVERSE.slice(); const B = 12;
     (function batch(k) {
-      if (k >= list.length) { setStatus('自选实时行情已更新 (' + UNIVERSE.length + ')'); return; }
+      if (k >= list.length) { setStatus('自选实时行情已更新 (' + UNIVERSE.length + ')'); ensureMarketEnv(true); if (state.bars) renderForecast(); return; }
       const slice = list.slice(k, k + B);
       Promise.all(slice.map(function (u) {
         return ensureReal(u, state.days).then(function () { updateWlItem(u); }).catch(function () {});
