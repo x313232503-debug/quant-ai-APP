@@ -266,6 +266,11 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
         </div>
       </div>
 
+      <div class="card" id="futAdvisorCard" style="display:none">
+        <h3>期货多周期 · 综合建议 <span class="fc-sub">5m / 25m · 实时校验</span></h3>
+        <div id="futAdvisor"></div>
+      </div>
+
       <div class="card">
         <h3>大模型解读</h3>
         <button id="btnAI">用大模型解读当前信号</button>
@@ -701,8 +706,61 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     };
   }
 
+  // 分钟线框架（5m / 25m）：期货用新浪 getFewMinLine，数字资产用 Binance 实时 klines
+  function sinaMinKline(symbol, type) {
+    const name = '_qm' + (++jsonpSeq);
+    const url = 'https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20' + name +
+      '=/InnerFuturesNewService.getFewMinLine?symbol=' + symbol + '&type=' + type;
+    return jsonp(url, name).then(function (j) {
+      if (!j || !j.length) throw new Error('no data');
+      return j.map(function (r) {
+        const d = (r.d || '').replace(/-/g, '/');
+        return { t: Date.parse(d), o: +r.o, h: +r.h, l: +r.l, c: +r.c, v: +r.v };
+      }).filter(function (b) { return b.c > 0 && b.t; });
+    });
+  }
+  function fromBinanceMin(symbol, interval, limit) {
+    const url = 'https://data-api.binance.vision/api/v3/klines?symbol=' + symbol +
+      '&interval=' + interval + '&limit=' + limit;
+    return fetch(url, { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.json();
+    }).then(function (j) {
+      if (!j || !j.length) throw new Error('no data');
+      return j.map(function (k) { return { t: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5] }; });
+    });
+  }
+  // 聚合 5m → 25m（5 根合成 1 根）
+  function agg25(bars5) {
+    if (!bars5 || bars5.length < 5) return [];
+    const out = [];
+    for (let i = 0; i + 4 < bars5.length; i += 5) {
+      const g = bars5.slice(i, i + 5);
+      const hi = g.reduce(function (m, b) { return Math.max(m, b.h); }, -Infinity);
+      const lo = g.reduce(function (m, b) { return Math.min(m, b.l); }, Infinity);
+      const vol = g.reduce(function (s, b) { return s + b.v; }, 0);
+      out.push({ t: g[0].t, o: g[0].o, h: hi, l: lo, c: g[g.length - 1].c, v: vol });
+    }
+    return out;
+  }
+  // 返回 { d5, d25, source, delayed, err }（best-effort，失败不抛出）
+  function loadFrames(m) {
+    if (m.type === 'crypto') {
+      return fromBinanceMin(m.real.symbol, '5m', 160).then(function (b5) {
+        return { d5: b5, d25: agg25(b5), source: 'binance', delayed: false, err: null };
+      }).catch(function (e) { return { d5: null, d25: null, source: 'binance', delayed: false, err: String(e.message || e) }; });
+    }
+    if (m.real && (m.real.src === 'sina_fut' || m.real.src === 'sina_fut_auto')) {
+      const sym = m.real.symbol;
+      return sinaMinKline(sym, 5).then(function (b5) {
+        return { d5: b5, d25: agg25(b5), source: 'sina', delayed: true, err: null };
+      }).catch(function (e) { return { d5: null, d25: null, source: 'sina', delayed: true, err: String(e.message || e) }; });
+    }
+    return Promise.resolve({ d5: null, d25: null, source: 'none', delayed: true, err: '无分钟线源' });
+  }
+
   global.QData = {
-    UNIVERSE: UNIVERSE, generateSeries: generateSeries, loadReal: loadReal,
+    UNIVERSE: UNIVERSE, generateSeries: generateSeries, loadReal: loadReal, loadFrames: loadFrames,
     computeIndicators: computeIndicators, sma: sma, ema: ema, rsi: rsi, macd: macd, bollinger: bollinger,
   };
 })(window);
@@ -905,7 +963,85 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     return { equity: equity, totalRet: totalRet, maxDD: maxDD, sharpe: sharpe, winRate: winRate, trades: trades, buyHold: buyHold, finalEq: equity[equity.length - 1] || 1 };
   }
 
-  global.QFut = { name: '期货日内框架(1万)', signalAt: signalAt, explainSignal: explainSignal, backtest: backtest, atr: atr, futSignal: futSignal };
+  // ---- 融合第二套策略：三因子（实时技术0.40 + 板块情绪0.35 + 现货基差0.25）----
+  const W_TECH = 0.40, W_SENT = 0.35, W_BASIS = 0.25;
+  // 数据质量失效安全（融合第二套策略 data_quality：字段缺失/价为0/OHLC/静止/量退/冻结）
+  function verifyQuote(bar, prev, opts) {
+    opts = opts || {};
+    const need = ['o', 'h', 'l', 'c', 'v'];
+    for (let k = 0; k < need.length; k++) { const x = bar[need[k]]; if (x == null || isNaN(x)) return { ok: false, level: 'ERROR', reason: '字段缺失/非数: ' + need[k] }; }
+    if (bar.c <= 0) return { ok: false, level: 'ERROR', reason: '最新价≤0' };
+    if (bar.h < bar.l) return { ok: false, level: 'ERROR', reason: 'OHLC异常 high<low' };
+    if (bar.c > bar.h || bar.c < bar.l) return { ok: false, level: 'ERROR', reason: '收盘越出高低范围' };
+    if (prev) {
+      if (bar.v < prev.v) return { ok: false, level: 'WARN', reason: '成交量回退(可能异常)' };
+      if (bar.o === prev.o && bar.h === prev.h && bar.l === prev.l && bar.c === prev.c && bar.v === prev.v) return { ok: false, level: 'WARN', reason: '行情冻结(连续相同)' };
+    }
+    if (opts.now && bar.t) {
+      const age = opts.now - bar.t; const lim = opts.frame ? 10000 : (opts.staleMs || 15 * 60 * 1000);
+      if (age > lim) return { ok: false, level: opts.frame ? 'ERROR' : 'WARN', reason: '行情静止/过期' };
+    }
+    return { ok: true, level: 'INFO', reason: '' };
+  }
+  // 实时技术因子：均线排列 + 区间突破 + 量能突增 + 乖离回归
+  function techScore(bars, ind, i) {
+    const c = bars.map(function (b) { return b.c; });
+    const maFast = QD.sma(c, FAST), maSlow = ind.ma20;
+    const vols = bars.map(function (b) { return b.v; }), vma = QD.sma(vols, VOLN);
+    if (i < 1 || maFast[i] == null || maSlow[i] == null || vma[i] == null) return 0;
+    const arr = maFast[i] > maSlow[i] ? 1 : maFast[i] < maSlow[i] ? -1 : 0;
+    const cross = (maFast[i - 1] <= maSlow[i - 1] && maFast[i] > maSlow[i]) ? 1 : (maFast[i - 1] >= maSlow[i - 1] && maFast[i] < maSlow[i]) ? -1 : 0;
+    const vol = vols[i] > VSPIKE * (vma[i] || vols[i]) ? 1 : 0;
+    const win = bars.slice(Math.max(0, i - 20), i + 1).map(function (b) { return b.c; });
+    const hi20 = Math.max.apply(null, win), lo20 = Math.min.apply(null, win);
+    const brk = c[i] > hi20 ? 1 : c[i] < lo20 ? -1 : 0;
+    const dev = (c[i] - maSlow[i]) / maSlow[i];
+    const revert = Math.abs(dev) > 0.08 ? -Math.sign(dev) * 0.1 : 0;
+    return clamp(0.7 * arr + 0.1 * cross + 0.1 * vol + 0.2 * brk + revert, -1, 1);
+  }
+  function frame(bars, ind, i) {
+    const ts = techScore(bars, ind, i); const a = futSignal(bars, ind, i);
+    const atrV = atr(bars, ATRN)[i] || 0; const c = bars[i].c;
+    const stopDist = Math.min(atrV * 1.5, c * 0.006);
+    return { tech: ts, dir: a.dir, atr: atrV, stop: a.dir > 0 ? c - stopDist : a.dir < 0 ? c + stopDist : null, target: a.dir > 0 ? c + atrV * 3 : a.dir < 0 ? c - atrV * 3 : null };
+  }
+  function sessionState(now, m) {
+    const d = new Date(now), day = d.getDay(), hh = d.getHours(), mm = d.getMinutes(), mins = hh * 60 + mm;
+    if (m.type === 'crypto') return { trade: true, nearClose: false, note: '数字资产 24h 连续交易' };
+    const inDay = day >= 1 && day <= 5 && mins >= 540 && mins <= 900;
+    if (!inDay) return { trade: false, nearClose: false, note: '非日盘交易时段（夜盘不在策略内），不交易' };
+    return { trade: true, nearClose: mins >= 885, note: mins >= 885 ? '临近 15:00，执行日内强平' : '日盘交易中' };
+  }
+  // 综合建议：5m 主 + 25m 趋势过滤 + 板块情绪 + 时间 + 趋势预测
+  function advisor(f5, f25, env, fc, now, m) {
+    const tech5 = f5 ? f5.tech : 0, tech25 = f25 ? f25.tech : 0;
+    const sent = clamp(env ? (env.breadth - 0.5) * 2 : 0, -1, 1);
+    const envS = env ? clamp((env.breadth - 0.5) * 2 * 0.7 + clamp((env.avgMom || 0) * 3, -1, 1) * 0.3, -1, 1) : 0;
+    let score = W_TECH * (0.6 * tech5 + 0.4 * tech25) + W_SENT * sent + W_BASIS * 0;
+    const sess = sessionState(now, m);
+    // 出手门槛：doc-2 建议 |综合分|>0.30 为强确认；此处取 0.20 使清晰趋势（doc-1 原即方向>0 即出手）也能触发，兼顾实用性
+    let action = '观望';
+    if (Math.abs(score) > 0.20 && sess.trade) action = score > 0 ? '多' : '空';
+    if (!sess.trade) action = '观望';
+    const conf = Math.round(clamp(0.45 + 0.4 * Math.abs(score) + (action !== '观望' ? 0.1 : 0), 0.1, 0.95) * 100);
+    const parts = [];
+    parts.push('5m 技术 ' + tech5.toFixed(2) + (tech5 > 0 ? '(偏多)' : tech5 < 0 ? '(偏空)' : '(中性)'));
+    parts.push('25m 技术 ' + tech25.toFixed(2) + (tech25 > 0 ? '(偏多)' : tech25 < 0 ? '(偏空)' : '(中性)'));
+    parts.push('板块情绪 ' + Math.round((sent + 1) * 50) + ' 分' + (sent > 0.1 ? ' 风险偏好上行' : sent < -0.1 ? ' 风险偏好下行' : ' 中性'));
+    parts.push('时段：' + sess.note);
+    if (fc) parts.push('趋势预测：' + (fc.regime || '—') + '(' + (fc.confidence || 0) + '%)');
+    let viewpoint;
+    if (action === '多') viewpoint = '综合偏多：5m 与 25m 技术共振向上、板块情绪配合，可于回踩不破时偏多；' + sess.note + '。严格 ATR×1.5 止损、ATR×3 止盈、日内强平。';
+    else if (action === '空') viewpoint = '综合偏空：技术因子共振向下、情绪偏弱，可于反抽不过时偏空；' + sess.note + '。控制仓位，单笔≤1.5%、单日≤3%即停。';
+    else viewpoint = '综合观望：技术/情绪未形成一致或当前非交易时段，建议观望，等 5m 上/下穿并放量确认；' + sess.note + '。';
+    return { action: action, confidence: conf, score: score, viewpoint: viewpoint, detail: parts, sess: sess, f5: f5, f25: f25, envScore: envS };
+  }
+
+  global.QFut = {
+    name: '期货日内框架(1万)', signalAt: signalAt, explainSignal: explainSignal, backtest: backtest,
+    atr: atr, futSignal: futSignal, verifyQuote: verifyQuote, techScore: techScore, frame: frame, advisor: advisor, sessionState: sessionState,
+    W: { tech: W_TECH, sent: W_SENT, basis: W_BASIS },
+  };
 })(window);
 
 /* =========================================================================
@@ -1352,11 +1488,23 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     }
   }
 
-  function finish() { state.ind = QD.computeIndicators(state.bars); recompute(); renderHeader(); }
+  function finish() {
+    state.ind = QD.computeIndicators(state.bars); recompute(); renderHeader();
+    const fm = meta(state.code);
+    if (fm.type === 'future' || fm.type === 'crypto') refreshFuturesFrames(fm);
+  }
 
   function recompute() {
     const m = meta(state.code); const strat = strategyFor(m.type);
-    if (strat) { state.sig = strat.signalAt(state.bars, state.ind, state.weights); renderSignal(); renderBacktest(); }
+    if (strat) {
+      state.sig = strat.signalAt(state.bars, state.ind, state.weights);
+      const vq = QFut.verifyQuote(state.bars[state.bars.length - 1], state.bars[state.bars.length - 2], { now: Date.now() });
+      if (!vq.ok && vq.level === 'ERROR') {
+        state.sig = { action: 'HOLD', score: 0, confidence: 0, name: '数据校验失败', dir: '空仓', sub: { trend: 0, momentum: 0, macd: 0, boll: 0, volume: 0 } };
+        setStatus('数据校验未通过（' + vq.reason + '），本周期不出行，已回退观望');
+      }
+      renderSignal(); renderBacktest();
+    }
     else { state.sig = null; renderFutureStrategyNote(); }
     const env = ensureMarketEnv(); const fc = forecastSymbol(m, state.bars, env);
     const fBias = fc.raw > 10 ? 'up' : fc.raw < -10 ? 'down' : 'flat';
@@ -1405,6 +1553,45 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
       + '</ul>'
       + '<div class="note" style="margin-top:6px">本App为日线数据，信号是盘中5分钟框架的日线代理；真实日内须5分钟K线+交易时段执行。非投资建议。</div>'
       + '</div>';
+  }
+
+  function refreshFuturesFrames(m) {
+    const card = $('#futAdvisorCard'); if (!card) return;
+    if (m.type !== 'future' && m.type !== 'crypto') { card.style.display = 'none'; return; }
+    card.style.display = ''; renderFuturesAdvisor({ loading: true });
+    QD.loadFrames(m).then(function (fr) {
+      const now = Date.now();
+      const d5 = fr.d5, d25 = fr.d25; const errs = [];
+      if (d5 && d5.length) { const v = QFut.verifyQuote(d5[d5.length - 1], d5[d5.length - 2], { now: now, frame: true }); if (!v.ok && v.level === 'ERROR') errs.push('5m: ' + v.reason); }
+      if (d25 && d25.length) { const v = QFut.verifyQuote(d25[d25.length - 1], d25[d25.length - 2], { now: now, frame: true }); if (!v.ok && v.level === 'ERROR') errs.push('25m: ' + v.reason); }
+      const ind5 = d5 ? QD.computeIndicators(d5) : null;
+      const ind25 = d25 ? QD.computeIndicators(d25) : null;
+      const f5 = (d5 && ind5) ? QFut.frame(d5, ind5, d5.length - 1) : null;
+      const f25 = (d25 && ind25) ? QFut.frame(d25, ind25, d25.length - 1) : null;
+      const env = ensureMarketEnv(); const fc = forecastSymbol(m, state.bars, env);
+      const fa = QFut.advisor(f5, f25, env, fc, now, m);
+      fa.source = fr.source; fa.delayed = fr.delayed; fa.errs = errs; fa.frameErr = fr.err;
+      renderFuturesAdvisor(fa);
+    }).catch(function (e) { renderFuturesAdvisor({ loading: false, error: String((e && e.message) || e) }); });
+  }
+  function renderFuturesAdvisor(fa) {
+    const box = $('#futAdvisor'); if (!box) return;
+    if (fa.loading) { box.innerHTML = '<div class="muted">加载分钟线…</div>'; return; }
+    if (fa.error) { box.innerHTML = '<div class="muted">分钟线加载失败：' + fa.error + '（已用日线代理）</div>'; return; }
+    const map = { '多': ['偏多 / 做多', '#26a69a'], '空': ['偏空 / 做空', '#ef5350'], '观望': ['观望', '#f0b90b'] };
+    const lb = map[fa.action] || map['观望'];
+    let html = '<div><span class="wl-sig" style="background:' + lb[1] + '">' + lb[0] + '</span> <span class="muted">综合分 ' + fa.score.toFixed(2) + ' · 置信 ' + fa.confidence + '%</span></div>';
+    html += '<div class="fc-drivers">';
+    html += '<div>5m：' + (fa.f5 ? ('方向 ' + (fa.f5.dir > 0 ? '多' : fa.f5.dir < 0 ? '空' : '无') + '，ATR止损 ' + (fa.f5.stop ? fa.f5.stop.toFixed(2) : '—') + '，目标 ' + (fa.f5.target ? fa.f5.target.toFixed(2) : '—')) : '无') + '</div>';
+    html += '<div>25m：' + (fa.f25 ? ('方向 ' + (fa.f25.dir > 0 ? '多' : fa.f25.dir < 0 ? '空' : '无')) : '无') + '</div>';
+    html += '</div>';
+    html += '<div class="fc-adv-sum">' + fa.viewpoint + '</div>';
+    html += '<div class="fc-adv-peer">' + (fa.detail || []).join('；') + '</div>';
+    const srcNote = fa.source === 'sina' ? '（期货分钟线为免费源，数据延迟/历史，非交易所实时）'
+      : fa.source === 'binance' ? '（数字资产 Binance 实时 5m）' : '（无分钟线源）';
+    const errNote = (fa.errs && fa.errs.length) ? ' ⚠ 数据校验未通过：' + fa.errs.join('；') + '，本周期不出行' : '';
+    html += '<div class="note">数据源 ' + (fa.source || '—') + srcNote + (fa.frameErr ? '；分钟线错误: ' + fa.frameErr : '') + errNote + '。基差/现货腿免费源难取（占位0）；交易所涨跌停/OI 需本地 TqSdk。非投资建议。</div>';
+    box.innerHTML = html;
   }
 
   function renderSignal() {
