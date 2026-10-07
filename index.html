@@ -36,6 +36,9 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
 .wl-price small { display: block; font-size: 10px; }
 .wl-sig { width: 22px; height: 22px; border-radius: 6px; color: #0b0e14; font-weight: 700; display: grid; place-items: center; font-size: 12px; }
 .wl-live { color: #26a69a; font-size: 9px; margin-left: 3px; }
+  .rt-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#26a69a; margin-left:6px; vertical-align:middle; animation:pulse 1.4s infinite; }
+  @keyframes pulse { 0%{opacity:.3} 50%{opacity:1} 100%{opacity:.3} }
+  .rt-upd { font-size:10px; color:var(--muted); margin-left:6px; }
 
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .topbar { display: flex; align-items: baseline; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
@@ -104,6 +107,10 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
 
 /* 趋势预测 */
 .fc-sub { font-size: 10px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .data-verify { font-size:12px; padding:6px 8px; border-radius:6px; margin-bottom:8px; line-height:1.5; }
+  .data-verify.ok { background:rgba(38,166,154,.12); color:#26a69a; }
+  .data-verify.warn { background:rgba(239,83,80,.14); color:#ef5350; }
+  .data-verify.info { background:rgba(240,185,11,.12); color:#f0b90b; }
 #fcBadge { display: inline-block; padding: 2px 10px; border-radius: 6px; color: #0b0e14; font-weight: 700; font-size: 12px; }
 #fcConf { color: var(--muted); font-size: 11px; margin-left: 8px; }
 .fc-score { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
@@ -235,6 +242,8 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
         <span id="srcBadge">模拟</span>
         <span id="lastPrice">—</span>
         <span id="chg">—</span>
+        <span id="rtDot" class="rt-dot" style="display:none"></span>
+        <span id="rtUpd" class="rt-upd"></span>
         <span class="spacer"></span>
         <span class="seg">
           <button id="srcSim">模拟</button>
@@ -314,7 +323,8 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
       <div class="card">
         <h3>说明</h3>
         <p class="note">
-          <span class="tag">实时行情</span>：加密用 Binance、A股用腾讯、期货用新浪公开接口，前端直连（JSONP / CORS）。<br>
+          <span class="tag">实时行情</span>：加密用 Binance、A股用腾讯、期货用新浪/腾讯/东财公开接口，前端直连（JSONP / CORS），期货/数字资产开启<b>秒级轮询</b>。<br>
+          多源交叉核验 + 可选<b>天勤 TqSdk 中继</b>权威核验：源间或与前收盘偏差过大时给出 ⚠ 提示，权威源冲突时自动转观望（不假装通过）。<br>
           行情接口若被拦截或超时，会自动<span class="tag">回退模拟</span>，不至于白屏。<br>
           <span class="tag">AI 信号</span> = 多因子（趋势/动量/MACD/布林/量能）加权评分，完全可解释。<br>
           <span class="tag">大模型解读</span> 需要自行配置 Key（存于浏览器本地，不上传服务器）。
@@ -333,6 +343,8 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
       <input id="cfgKey" type="password" placeholder="sk-..." />
       <label>模型名</label>
       <input id="cfgModel" placeholder="deepseek-chat" />
+      <label>天勤 TqSdk 实时核验中继（可选）</label>
+      <input id="cfgTq" placeholder="https://你的中继/verify  （留空=多源交叉核验）" />
       <p class="note" style="margin-top:12px">
         示例：DeepSeek <code>https://api.deepseek.com/v1</code> + <code>deepseek-chat</code>；
         OpenAI <code>https://api.openai.com/v1</code> + <code>gpt-4o-mini</code>；
@@ -759,8 +771,97 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     return Promise.resolve({ d5: null, d25: null, source: 'none', delayed: true, err: '无分钟线源' });
   }
 
+  // ---------- 实时行情（轮询，秒级；多源交叉核验 + 天勤 TqSdk 可插拔核验）----------
+  // 腾讯/新浪/东财为免费 Web 源（秒级延迟，非交易所 tick）；Binance 为数字资产真·实时；
+  // TqSdk 经用户自建中继提供权威核验（交易所级）。任一源异常或源间/与天勤偏差过大 → 提示/观望。
+  function _scriptJson(url, varName) {
+    return new Promise(function (resolve, reject) {
+      const s = document.createElement('script');
+      s.src = url; s.charset = 'gbk';
+      const to = setTimeout(function () { s.remove(); reject(new Error('timeout')); }, 6000);
+      s.onload = function () { clearTimeout(to); try { const raw = window[varName]; if (raw == null) return reject(new Error('empty ' + varName)); resolve(String(raw)); } catch (e) { reject(e); } finally { s.remove(); } };
+      s.onerror = function () { clearTimeout(to); s.remove(); reject(new Error('net ' + varName)); };
+      document.head.appendChild(s);
+    });
+  }
+  function _num(s) { const n = parseFloat(s); return isNaN(n) ? null : n; }
+  function fetchRtTencent(m) {
+    const sym = (m.real && m.real.symbol) || m.code;
+    return _scriptJson('https://qt.gtimg.cn/q=hf_' + sym, 'v_hf_' + sym).then(function (raw) {
+      const p = raw.split('~');
+      const price = _num(p[3]); if (price == null || price <= 0) throw new Error('bad price');
+      return { src: 'tencent', price: price, prevClose: _num(p[4]), time: Date.now() };
+    });
+  }
+  function fetchRtSina(m) {
+    const sym = (m.real && m.real.symbol) || m.code;
+    return _scriptJson('https://hq.sinajs.cn/list=nf_' + sym, 'hq_str_nf_' + sym).then(function (raw) {
+      const p = raw.split(',');
+      const price = _num(p[4]); const t = Date.parse((p[0] || '').replace(/-/g, '/'));
+      if (price == null || price <= 0) throw new Error('bad price');
+      return { src: 'sina', price: price, time: isNaN(t) ? Date.now() : t };
+    });
+  }
+  const EM_MARKET = { SHFE: 113, DCE: 114, CZCE: 115, CFFEX: 8, INE: 112 };
+  function emVariety(sym) { return String(sym).replace(/[0-9].*$/, ''); }
+  function emSecid(m) {
+    const sym = (m.real && m.real.symbol) || m.code;
+    const v = emVariety(sym).toUpperCase();
+    const mk = (m.real && m.real.market) || 'SHFE';
+    const market = EM_MARKET[mk] || 113;
+    const code = /0$/.test(sym) ? v.toLowerCase() + '9999' : sym.toLowerCase();
+    return market + '.' + code;
+  }
+  function fetchRtEastmoney(m) {
+    const secid = emSecid(m);
+    const url = 'https://push2.eastmoney.com/api/qt/stock/get?secid=' + secid + '&fields=f43,f57,f58,f60,f86&_=' + Date.now();
+    return fetch(url, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(function (j) {
+      const d = j && j.data; if (!d) throw new Error('no data');
+      const price = _num(d.f43); if (price == null || price <= 0) throw new Error('bad price');
+      return { src: 'eastmoney', price: price, secid: secid, time: Date.now() };
+    });
+  }
+  function fetchRtBinance(m) {
+    const sym = (m.real && m.real.symbol) || m.code;
+    return fetch('https://data-api.binance.vision/api/v3/ticker/price?symbol=' + sym, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(function (j) {
+      const price = _num(j.price); if (price == null || price <= 0) throw new Error('bad price');
+      return { src: 'binance', price: price, time: Date.now() };
+    });
+  }
+  function fetchRtTq(m) {
+    let relay = ''; try { relay = localStorage.getItem('qai_tq_relay') || ''; } catch (e) {}
+    if (!relay) return Promise.reject(new Error('no relay'));
+    const sym = (m.real && m.real.symbol) || m.code;
+    return fetch(relay + (relay.indexOf('?') >= 0 ? '&' : '?') + 'symbol=' + encodeURIComponent(sym), { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(function (j) {
+      const price = _num(j.price != null ? j.price : j.last); if (price == null || price <= 0) throw new Error('bad price');
+      const ts = j.ts ? (typeof j.ts === 'number' ? j.ts : Date.parse(j.ts)) : Date.now();
+      return { src: 'tqsdk', price: price, time: isNaN(ts) ? Date.now() : ts };
+    });
+  }
+  function fetchRealtime(m) {
+    const sources = m.type === 'crypto' ? [fetchRtBinance, fetchRtTq] : [fetchRtTencent, fetchRtSina, fetchRtEastmoney, fetchRtTq];
+    const out = { primary: null, all: [], errs: [] };
+    return Promise.all(sources.map(function (fn) {
+      return fn(m).then(function (r) { out.all.push(r); if (!out.primary) out.primary = r; return r; }).catch(function (e) { out.errs.push((fn.name || 'src') + ': ' + e.message); });
+    })).then(function () { if (!out.primary) throw new Error('全源失败 ' + out.errs.join('; ')); return out; });
+  }
+  function crossVerifyPrices(list, threshold) {
+    threshold = threshold || 0.003;
+    const ok = list.filter(function (x) { return x && x.price > 0; });
+    if (ok.length === 0) return { level: 'ERROR', msg: '无可用实时源', dev: 1, involveTq: false };
+    if (ok.length === 1) return { level: 'INFO', msg: '单一源(' + ok[0].src + ')，无交叉核验', dev: 0, involveTq: ok[0].src === 'tqsdk' };
+    let maxDev = 0, pair = '', involveTq = false;
+    for (let i = 0; i < ok.length; i++) for (let j = i + 1; j < ok.length; j++) {
+      const d = Math.abs(ok[i].price - ok[j].price) / ok[i].price;
+      if (d > maxDev) { maxDev = d; pair = ok[i].src + ' vs ' + ok[j].src; involveTq = pair.indexOf('tqsdk') >= 0; }
+    }
+    if (maxDev > threshold) return { level: 'WARN', msg: '源间偏差 ' + (maxDev * 100).toFixed(2) + '%(' + pair + ')', dev: maxDev, involveTq: involveTq };
+    return { level: 'OK', msg: '多源一致(最大偏差 ' + (maxDev * 100).toFixed(2) + '%)', dev: maxDev, involveTq: involveTq };
+  }
+
   global.QData = {
     UNIVERSE: UNIVERSE, generateSeries: generateSeries, loadReal: loadReal, loadFrames: loadFrames,
+    realtime: fetchRealtime, crossVerify: crossVerifyPrices,
     computeIndicators: computeIndicators, sma: sma, ema: ema, rsi: rsi, macd: macd, bollinger: bollinger,
   };
 })(window);
@@ -1175,6 +1276,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     code: UNIVERSE[0].code, bars: null, ind: null, sig: null,
     weights: Object.assign({}, QS.DEFAULT_WEIGHTS), days: 250, source: 'live',
     search: '', typeFilter: 'all',
+    rt: null, pollMs: 8000,
   };
   const realCache = new Map();   // code|days -> bars
   const inflight = new Map();
@@ -1469,7 +1571,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
   function fallback(m, days) { return QD.generateSeries(m, days); }
 
   function selectSymbol(code) {
-    state.code = code; const m = meta(code);
+    state.code = code; stopLivePolling(); const m = meta(code);
     document.querySelectorAll('.wl-item').forEach(function (e) { e.classList.remove('active'); });
     const act = document.querySelector('.wl-item[data-code="' + code + '"]'); if (act) act.classList.add('active');
 
@@ -1492,6 +1594,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     state.ind = QD.computeIndicators(state.bars); recompute(); renderHeader();
     const fm = meta(state.code);
     if (fm.type === 'future' || fm.type === 'crypto') refreshFuturesFrames(fm);
+    startLivePolling();
   }
 
   function recompute() {
@@ -1514,7 +1617,8 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
 
   function renderHeader() {
     const m = meta(state.code); const bars = state.bars;
-    const last = bars[bars.length - 1].c, prev = bars[bars.length - 2] ? bars[bars.length - 2].c : last;
+    const rtP = (state.rt && state.rt.primary) ? state.rt.primary.price : null;
+    const last = rtP != null ? rtP : bars[bars.length - 1].c, prev = bars[bars.length - 2] ? bars[bars.length - 2].c : last;
     const chg = prev ? (last - prev) / prev * 100 : 0; const col = chg >= 0 ? '#26a69a' : '#ef5350';
     $('#symName').textContent = m.name + ' (' + m.code + ')';
     $('#symType').textContent = ({ stock: '股票', future: '期货', crypto: '数字资产' })[m.type] || m.type;
@@ -1678,6 +1782,53 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     })(0);
   }
 
+  // ---------- 实时轮询 + 多源/天勤核验（A：零后端，秒级轮询）----------
+  let pollTimer = null;
+  function stopLivePolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+  function startLivePolling() {
+    stopLivePolling();
+    const m = meta(state.code);
+    if (state.source !== 'live') return;
+    if (m.type !== 'future' && m.type !== 'crypto') return;
+    pollTimer = setInterval(pollTick, state.pollMs || 8000);
+    pollTick();
+  }
+  function pollTick() {
+    const m = meta(state.code);
+    QD.realtime(m).then(function (rt) {
+      state.rt = rt;
+      const v = QD.crossVerifyPrices(rt.all, 0.003);
+      renderRealtime(m, rt, v);
+    }).catch(function (e) {
+      state.rt = null;
+      renderRealtime(m, null, { level: 'ERROR', msg: '实时源全部失败：' + (e && e.message ? e.message : e), dev: 1, involveTq: false });
+    });
+  }
+  function HOLD_SIG() { return { action: 'HOLD', dir: '空仓', score: 0, confidence: 0, name: '实时核验异常', stop: 0, target: 0, vol: false, recently: false, sub: { trend: 0, momentum: 0, macd: 0, boll: 0, volume: 0 } }; }
+  function renderRealtime(m, rt, v) {
+    const lp = $('#lastPrice');
+    if (rt && rt.primary) {
+      if (lp) lp.textContent = fmt(rt.primary.price);
+      const dot = $('#rtDot'); if (dot) dot.style.display = '';
+      const upd = $('#rtUpd'); if (upd) upd.textContent = '更新 ' + new Date().toLocaleTimeString();
+    }
+    let vb = $('#dataVerify');
+    if (!vb) { vb = document.createElement('div'); vb.id = 'dataVerify'; vb.className = 'data-verify'; const card = $('#futAdvisorCard'); if (card) card.insertBefore(vb, $('#futAdvisor')); }
+    if (!vb) return;
+    const cls = v.level === 'OK' ? 'ok' : (v.level === 'WARN' || v.level === 'ERROR') ? 'warn' : 'info';
+    const ico = v.level === 'OK' ? '✓' : (v.level === 'WARN' || v.level === 'ERROR') ? '⚠' : 'ⓘ';
+    let tq = ''; try { tq = localStorage.getItem('qai_tq_relay') || ''; } catch (e) {}
+    const extra = tq ? ' · 已接入天勤核验' : ' · 未接入天勤（设置里填中继地址启用权威核验）';
+    vb.className = 'data-verify ' + cls;
+    vb.innerHTML = ico + ' 实时核验：' + v.msg + extra;
+    if (v.level === 'ERROR' || (v.level === 'WARN' && v.involveTq)) {
+      setStatus('实时核验异常：' + v.msg + '（本周期不出行，已转观望）');
+      if (m.type === 'future' || m.type === 'crypto') { state.sig = HOLD_SIG(); renderSignal(); }
+    } else if (v.level === 'WARN') {
+      setStatus('实时核验提示：' + v.msg + '（仅供参考，未强制观望）');
+    }
+  }
+
   function buildWeightSliders() {
     const m0 = meta(state.code);
     if (m0.type === 'future') { renderFuturesStrategyPanel(); return; }
@@ -1757,13 +1908,14 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
   function openSettings() {
     const cfg = getLLM();
     $('#cfgBase').value = cfg.baseUrl || ''; $('#cfgKey').value = cfg.apiKey || ''; $('#cfgModel').value = cfg.model || '';
+    let tq = ''; try { tq = localStorage.getItem('qai_tq_relay') || ''; } catch (e) {} $('#cfgTq').value = tq;
     $('#modal').classList.add('show');
   }
   function closeSettings() { $('#modal').classList.remove('show'); }
 
   function bind() {
-    $('#srcSim').onclick = function () { if (state.source === 'sim') return; state.source = 'sim'; this.classList.add('on'); $('#srcLive').classList.remove('on'); renderWatchlist(); selectSymbol(state.code); };
-    $('#srcLive').onclick = function () { if (state.source === 'live') return; state.source = 'live'; this.classList.add('on'); $('#srcSim').classList.remove('on'); selectSymbol(state.code); refreshWatchlistLive(); };
+    $('#srcSim').onclick = function () { if (state.source === 'sim') return; state.source = 'sim'; this.classList.add('on'); $('#srcLive').classList.remove('on'); stopLivePolling(); renderWatchlist(); selectSymbol(state.code); };
+    $('#srcLive').onclick = function () { if (state.source === 'live') return; state.source = 'live'; this.classList.add('on'); $('#srcSim').classList.remove('on'); startLivePolling(); selectSymbol(state.code); refreshWatchlistLive(); };
     $('#wlSearch').addEventListener('input', function (e) { state.search = e.target.value; renderWatchlist(); });
     $('#wlType').addEventListener('click', function (e) {
       const b = e.target.closest('button'); if (!b) return;
@@ -1776,7 +1928,12 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     $('#btnReset').onclick = function () { state.weights = Object.assign({}, QS.DEFAULT_WEIGHTS); buildWeightSliders(); recompute(); renderWatchlist(); };
     $('#btnAI').onclick = askLLM;
     $('#btnSettings').onclick = openSettings;
-    $('#cfgSave').onclick = function () { setLLM({ baseUrl: $('#cfgBase').value.trim(), apiKey: $('#cfgKey').value.trim(), model: $('#cfgModel').value.trim() }); closeSettings(); };
+    $('#cfgSave').onclick = function () {
+      setLLM({ baseUrl: $('#cfgBase').value.trim(), apiKey: $('#cfgKey').value.trim(), model: $('#cfgModel').value.trim() });
+      try { localStorage.setItem('qai_tq_relay', $('#cfgTq').value.trim()); } catch (e) {}
+      closeSettings();
+      if (state.source === 'live') startLivePolling();
+    };
     $('#cfgClose').onclick = closeSettings;
     $('#modal').onclick = function (e) { if (e.target === $('#modal')) closeSettings(); };
     let rt; window.addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(function () { if (state.bars) window.QChart.draw($('#chart'), state.bars, state.ind, {}); }, 120); });
