@@ -795,6 +795,120 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
 })(window);
 
 /* =========================================================================
+ * futures.js — 期货日内量化框架（1万本金·只做日内）适配层
+ * 来源：用户提供的《期货日内量化交易策略设计》文档
+ * 说明：App 持有日线数据，本模块在日线分辨率复刻其“趋势突破+放量”主信号，
+ *      作为盘中5分钟信号的代理；日内强平/ORB/时段过滤须在5分钟K线+交易时段执行。
+ * ========================================================================= */
+(function (global) {
+  'use strict';
+  const QD = global.QData;
+  const FUT_MARGIN = 0.40;            // 总保证金占用上限 ≤40%
+  const FAST = 5, SLOW = 20, ATRN = 14, VOLN = 20, VSPIKE = 1.2;
+  function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+
+  function atr(bars, n) {
+    const tr = new Array(bars.length);
+    for (let i = 0; i < bars.length; i++) {
+      const b = bars[i];
+      tr[i] = i === 0 ? b.h - b.l : Math.max(b.h - b.l, Math.abs(b.h - bars[i - 1].c), Math.abs(b.l - bars[i - 1].c));
+    }
+    const out = new Array(bars.length).fill(null); let s = 0;
+    for (let i = 0; i < bars.length; i++) {
+      if (i < n) { s += tr[i]; if (i === n - 1) out[i] = s / n; }
+      else { s = (s * (n - 1) + tr[i]) / n; out[i] = s; }
+    }
+    return out;
+  }
+
+  // 日线代理主信号：MA(5) 与 MA(20) 多/空排列 + 放量确认（复刻“均线突破+放量”）
+  function futSignal(bars, ind, i) {
+    const c = bars.map(function (b) { return b.c; });
+    const maFast = QD.sma(c, FAST); const maSlow = ind.ma20;
+    const vols = bars.map(function (b) { return b.v; }); const vma = QD.sma(vols, VOLN);
+    if (i < 1 || maFast[i] == null || maSlow[i] == null || vma[i] == null) return { dir: 0, cross: 0, vol: false, maFast: maFast[i], maSlow: maSlow[i] };
+    const volSpike = vols[i] > VSPIKE * (vma[i] || vols[i]);
+    const crossUp = maFast[i - 1] <= maSlow[i - 1] && maFast[i] > maSlow[i];
+    const crossDn = maFast[i - 1] >= maSlow[i - 1] && maFast[i] < maSlow[i];
+    let dir = 0;
+    if (maFast[i] > maSlow[i] && c[i] > maSlow[i]) dir = 1;
+    else if (maFast[i] < maSlow[i] && c[i] < maSlow[i]) dir = -1;
+    let cross = 0; if (volSpike && crossUp) cross = 1; else if (volSpike && crossDn) cross = -1;
+    return { dir: dir, cross: cross, vol: volSpike, maFast: maFast[i], maSlow: maSlow[i] };
+  }
+
+  function signalAt(bars, ind, weights) {
+    const i = bars.length - 1; const c = bars[i].c;
+    const a = futSignal(bars, ind, i);
+    const atrV = atr(bars, ATRN)[i] || 0;
+    const stopDist = Math.min(atrV * 1.5, c * 0.006);
+    const dir = a.dir > 0 ? '多' : a.dir < 0 ? '空' : '空仓';
+    const action = a.dir > 0 ? 'BUY' : a.dir < 0 ? 'SELL' : 'HOLD';
+    let score = 0;
+    if (a.dir !== 0) score = a.dir * (0.5 + (a.vol ? 0.2 : 0) + (a.cross !== 0 ? 0.2 : 0));
+    score = clamp(score, -1, 1);
+    const stop = action !== 'HOLD' ? (a.dir > 0 ? c - stopDist : c + stopDist) : null;
+    const target = action !== 'HOLD' ? (a.dir > 0 ? c + atrV * 3 : c - atrV * 3) : null;
+    return {
+      action: action, score: score, confidence: Math.round(Math.abs(score) * 100),
+      dir: dir, stop: stop, target: target, atr: atrV, lots: 1, marginPct: FUT_MARGIN,
+      recently: a.cross, vol: a.vol, name: '期货日内框架(1万)',
+      sub: { trend: a.dir, momentum: a.vol ? 0.3 : 0, macd: 0, boll: 0, volume: a.vol ? 0.5 : 0 },
+    };
+  }
+
+  function explainSignal(sig) {
+    const p = [];
+    p.push('【期货日内框架·1万本金】当前信号：' + sig.dir);
+    if (sig.action !== 'HOLD') {
+      p.push('触发：MA(5)' + (sig.dir === '多' ? '上穿' : '下穿') + 'MA(20) 且价在慢线' + (sig.dir === '多' ? '上方' : '下方') + (sig.vol ? '，放量(>20根均量1.2倍)确认' : '，未见明显放量需谨慎') + (sig.recently ? (sig.dir === '多' ? '（金叉）' : '（死叉）') : ''));
+      p.push('止损位≈' + sig.stop.toFixed(2) + '（ATR(14)×1.5 与 0.6% 价止损取紧），目标位≈' + sig.target.toFixed(2) + '（ATR×3，约2:1盈亏比）');
+    } else {
+      p.push('均线未形成有效突破且未放量，建议观望；盘中等待 MA(5) 上/下穿 MA(20) 并放量再介入');
+    }
+    p.push('仓位纪律：1手/品种，保证金占用≤40%；单笔亏损≤1.5%(≈150元)、单日≤3%(≈300元)即停手；连续亏损3笔当日停止');
+    p.push('铁律：收盘前强平、绝不隔夜；本App为日线代理，真实日内须在5分钟K线+交易时段执行（09:00–09:30 ORB 仅前1小时）');
+    p.push('适配品种（平今优惠/低保证金优先）：玉米C、甲醇MA、螺纹RB、PTA；非投资建议，实盘前须回测+模拟盘验证');
+    return p.join('；') + '。';
+  }
+
+  // 日线代理回测：MA(5)/MA(20) 突破多空，满仓近似（真实按≤40%保证金+日内强平口径更平缓）
+  function backtest(bars, ind, weights, opts) {
+    const n = bars.length; const c = bars.map(function (b) { return b.c; });
+    const maFast = QD.sma(c, FAST); const maSlow = ind.ma20;
+    const vols = bars.map(function (b) { return b.v; }); const vma = QD.sma(vols, VOLN);
+    function sigAt(i) {
+      if (i < 1 || maFast[i] == null || maSlow[i] == null || vma[i] == null) return 0;
+      const volSpike = vols[i] > VSPIKE * (vma[i] || vols[i]);
+      if (maFast[i] > maSlow[i] && c[i] > maSlow[i] && volSpike) return 1;
+      if (maFast[i] < maSlow[i] && c[i] < maSlow[i] && volSpike) return -1;
+      return 0;
+    }
+    let cash = 1, pos = 0, entry = 0, trades = 0, wins = 0;
+    const equity = []; let peak = 1, maxDD = 0; const dailyRets = []; let prevEq = 1;
+    for (let i = 0; i < n; i++) {
+      const s = sigAt(i);
+      if (pos === 0 && s !== 0) { pos = s; entry = c[i]; trades++; }
+      else if (pos !== 0 && ((pos > 0 && s < 0) || (pos < 0 && s > 0))) {
+        const ret = pos * (c[i] - entry) / entry; cash *= (1 + ret); if (ret > 0) wins++; pos = 0; entry = 0;
+      }
+      const eq = pos !== 0 ? cash * (1 + pos * (c[i] - entry) / entry) : cash;
+      equity.push(eq); if (eq > peak) peak = eq; maxDD = Math.max(maxDD, (peak - eq) / peak);
+      if (i > 0) dailyRets.push(eq / prevEq - 1); prevEq = eq;
+    }
+    const totalRet = (equity[equity.length - 1] || 1) - 1;
+    const mean = dailyRets.reduce(function (a, b) { return a + b; }, 0) / (dailyRets.length || 1);
+    const variance = dailyRets.reduce(function (a, b) { return a + Math.pow(b - mean, 2); }, 0) / (dailyRets.length || 1);
+    const std = Math.sqrt(variance) || 1e-9; const sharpe = mean / std * Math.sqrt(252);
+    const winRate = trades ? wins / trades : 0;
+    const buyHold = (n ? c[n - 1] / c[0] : 1) - 1;
+    return { equity: equity, totalRet: totalRet, maxDD: maxDD, sharpe: sharpe, winRate: winRate, trades: trades, buyHold: buyHold, finalEq: equity[equity.length - 1] || 1 };
+  }
+
+  global.QFut = { name: '期货日内框架(1万)', signalAt: signalAt, explainSignal: explainSignal, backtest: backtest, atr: atr, futSignal: futSignal };
+})(window);
+
+/* =========================================================================
  * chart.js — Canvas 行情图渲染
  * ========================================================================= */
 (function (global) {
@@ -1263,7 +1377,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
   }
   function fmt(v) { return v >= 1000 ? v.toFixed(2) : v.toFixed(v < 10 ? 4 : 2); }
 
-  function strategyFor(type) { return type === 'future' ? null : QS; }
+  function strategyFor(type) { return type === 'future' ? QFut : QS; }
 
   function renderFutureStrategyNote() {
     const badge = $('#signalBadge');
@@ -1277,6 +1391,22 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     $('#btCompare').textContent = '期货专用回测即将上线';
   }
 
+  function renderFuturesStrategyPanel() {
+    const box = $('#weights'); if (!box) return; box.innerHTML = '';
+    box.innerHTML = '<div style="font-size:13px;line-height:1.7">'
+      + '<div style="font-weight:600;margin-bottom:6px">期货日内框架（1万本金·只做日内）</div>'
+      + '<ul style="margin:0;padding-left:18px">'
+      + '<li>主信号：MA(5) 上穿 MA(20) + 放量(量&gt;20根均量1.2倍)→多；下穿→空</li>'
+      + '<li>辅信号：09:00–09:30 开盘区间突破(ORB)，仅前1小时，错过后不追</li>'
+      + '<li>止损：ATR(14)×1.5 或 0.6% 价止损取紧；止盈：ATR×3(≈2:1)</li>'
+      + '<li>时段：09:30–09:45、14:45–15:00 不交易；14:55 前强平（日内铁律）</li>'
+      + '<li>仓位：1手/品种，保证金≤40%；单笔≤1.5%/单日≤3%停手；连亏3笔停</li>'
+      + '<li>适配：玉米C(平今免)、甲醇MA、螺纹RB、PTA（平今优惠优先）</li>'
+      + '</ul>'
+      + '<div class="note" style="margin-top:6px">本App为日线数据，信号是盘中5分钟框架的日线代理；真实日内须5分钟K线+交易时段执行。非投资建议。</div>'
+      + '</div>';
+  }
+
   function renderSignal() {
     const sig = state.sig;
     const map = { BUY: ['买入', '#26a69a'], SELL: ['卖出', '#ef5350'], HOLD: ['持有/观望', '#f0b90b'] };
@@ -1286,11 +1416,11 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     $('#scoreBar').style.width = Math.abs(sig.score) * 100 + '%';
     $('#scoreBar').style.background = sig.score >= 0 ? '#26a69a' : '#ef5350';
     $('#scoreVal').textContent = '综合评分 ' + sig.score.toFixed(2);
-    $('#explain').textContent = QS.explainSignal(sig);
+    $('#explain').textContent = strategyFor(meta(state.code).type).explainSignal(sig);
   }
 
   function renderBacktest() {
-    const r = QS.backtest(state.bars, state.ind, state.weights, { enter: 0.20, exit: -0.10 });
+    const r = strategyFor(meta(state.code).type).backtest(state.bars, state.ind, state.weights, { enter: 0.20, exit: -0.10 });
     const pct = function (x) { return (x * 100).toFixed(1) + '%'; };
     const set = function (id, v, good) { const el = $('#' + id); el.textContent = v; if (good !== undefined) el.style.color = good ? '#26a69a' : '#ef5350'; };
     set('btRet', pct(r.totalRet), r.totalRet >= 0); set('btDD', pct(r.maxDD), false);
@@ -1315,7 +1445,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     const last = bars[bars.length - 1].c, prev = bars[bars.length - 2] ? bars[bars.length - 2].c : last;
     const chg = prev ? (last - prev) / prev * 100 : 0;
     const isFut = u.type === 'future';
-    const ind = QD.computeIndicators(bars); const sig = isFut ? null : QS.signalAt(bars, ind, state.weights);
+    const ind = QD.computeIndicators(bars); const sig = isFut ? QFut.signalAt(bars, ind, state.weights) : QS.signalAt(bars, ind, state.weights);
     const map = { BUY: ['买', '#26a69a'], SELL: ['卖', '#ef5350'], HOLD: ['持', '#f0b90b'] };
     let metricsLine = '';
     if (m) {
@@ -1326,8 +1456,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     li.className = 'wl-item' + (u.code === state.code ? ' active' : ''); li.dataset.code = u.code;
     li.innerHTML = '<span class="wl-name">' + u.name + (live ? '<span class="wl-live">●实时</span>' : '') + '<small>' + u.code + '</small>' + metricsLine + '</span>' +
       '<span class="wl-price">' + fmt(last) + '<small style="color:' + (chg >= 0 ? '#26a69a' : '#ef5350') + '">' + (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%</small></span>' +
-      (isFut ? '<span class="wl-sig" style="background:var(--muted)">待策略</span>'
-             : '<span class="wl-sig" style="background:' + map[sig.action][1] + '">' + map[sig.action][0] + '</span>');
+      '<span class="wl-sig" style="background:' + map[sig.action][1] + '">' + map[sig.action][0] + '</span>';
     li.onclick = function () { selectSymbol(u.code); };
     return li;
   }
@@ -1364,7 +1493,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
 
   function buildWeightSliders() {
     const m0 = meta(state.code);
-    if (m0.type === 'future') { renderFutureStrategyNote(); return; }
+    if (m0.type === 'future') { renderFuturesStrategyPanel(); return; }
     const box = $('#weights'); box.innerHTML = '';
     Object.keys(state.weights).forEach(function (k) {
       const row = document.createElement('div'); row.className = 'w-row';
@@ -1393,10 +1522,17 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
       + '最新收盘：' + last.c + '，当日涨跌：' + chg.toFixed(2) + '%\n'
       + '近10日收盘：' + closes + '\n';
     if (strat && state.sig) {
-      body += '因子读数（-1~1）：趋势 ' + nf(s.trend) + '，动量 ' + nf(s.momentum) + '，MACD ' + nf(s.macd) + '，布林 ' + nf(s.boll) + '，量能 ' + nf(s.volume) + '\n'
-        + '综合评分：' + state.sig.score.toFixed(2) + '，系统信号：' + state.sig.action + '（置信度 ' + state.sig.confidence + '%）\n'
-        + '回测：策略收益 ' + (strat.backtest(b, state.ind, state.weights, {}).totalRet * 100).toFixed(1) + '%，'
-        + '买入持有 ' + ((b[n - 1].c / b[0].c - 1) * 100).toFixed(1) + '%\n';
+      if (m.type === 'future') {
+        body += '期货日内框架信号：' + state.sig.dir + '（' + state.sig.action + '），置信度 ' + state.sig.confidence + '%\n'
+          + 'ATR(14)=' + state.sig.atr.toFixed(2) + '，止损位≈' + state.sig.stop.toFixed(2) + '，目标位≈' + state.sig.target.toFixed(2) + '\n'
+          + '回测：策略收益 ' + (strat.backtest(b, state.ind, state.weights, {}).totalRet * 100).toFixed(1) + '%，'
+          + '买入持有 ' + ((b[n - 1].c / b[0].c - 1) * 100).toFixed(1) + '%\n';
+      } else {
+        body += '因子读数（-1~1）：趋势 ' + nf(s.trend) + '，动量 ' + nf(s.momentum) + '，MACD ' + nf(s.macd) + '，布林 ' + nf(s.boll) + '，量能 ' + nf(s.volume) + '\n'
+          + '综合评分：' + state.sig.score.toFixed(2) + '，系统信号：' + state.sig.action + '（置信度 ' + state.sig.confidence + '%）\n'
+          + '回测：策略收益 ' + (strat.backtest(b, state.ind, state.weights, {}).totalRet * 100).toFixed(1) + '%，'
+          + '买入持有 ' + ((b[n - 1].c / b[0].c - 1) * 100).toFixed(1) + '%\n';
+      }
     } else {
       body += '（期货品种暂未接入专属策略，以下为通用技术面描述）\n';
     }
@@ -1409,7 +1545,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     const out = $('#aiOut');
     if (!cfg.apiKey || !cfg.baseUrl) {
       out.classList.remove('muted');
-      out.textContent = '尚未配置大模型。请点「⚙ 设置」填写 API 地址 / Key / 模型后重试。\n\n（以下为内置规则解读）\n' + (state.sig ? QS.explainSignal(state.sig) : '（期货品种暂用通用解读，专属策略待接入）');
+      out.textContent = '尚未配置大模型。请点「⚙ 设置」填写 API 地址 / Key / 模型后重试。\n\n（以下为内置规则解读）\n' + (state.sig ? strategyFor(meta(state.code).type).explainSignal(state.sig) : '（尚未生成信号）');
       return;
     }
     const model = cfg.model || 'deepseek-chat';
@@ -1426,7 +1562,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
       const txt = j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
       out.textContent = txt || ('模型返回为空。原始响应：' + JSON.stringify(j).slice(0, 300));
     }).catch(function (e) {
-      out.textContent = '调用失败：' + (e && e.message ? e.message : e) + '\n\n常见原因：Key/地址有误；或浏览器直连被 CORS 拦截（把 Base URL 换成你的代理地址）。\n\n（以下为内置规则解读）\n' + (state.sig ? QS.explainSignal(state.sig) : '（期货品种暂用通用解读，专属策略待接入）');
+      out.textContent = '调用失败：' + (e && e.message ? e.message : e) + '\n\n常见原因：Key/地址有误；或浏览器直连被 CORS 拦截（把 Base URL 换成你的代理地址）。\n\n（以下为内置规则解读）\n' + (state.sig ? strategyFor(meta(state.code).type).explainSignal(state.sig) : '（尚未生成信号）');
     }).finally(function () { btn.disabled = false; btn.textContent = '用大模型解读当前信号'; });
   }
 
