@@ -82,6 +82,25 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
 #aiOut.muted { color: var(--muted); }
 .card .row { display:flex; gap:8px; }
 
+/* 小资金低波动筛选器 */
+.screener { border-bottom: 1px solid var(--line); padding: 8px 10px; background: var(--panel2); }
+.scr-head { display: flex; align-items: center; justify-content: space-between; }
+.scr-toggle { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.scr-body { margin-top: 8px; }
+.scr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+.scr-grid label { display: flex; flex-direction: column; font-size: 10px; color: var(--muted); gap: 2px; }
+.scr-grid input { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; font-size: 12px; width: 100%; }
+.scr-chk { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); margin-top: 8px; cursor: pointer; }
+.scr-btn { margin-top: 8px; width: 100%; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px; cursor: pointer; font-size: 11px; }
+.scr-btn:hover { border-color: var(--accent); }
+.scr-ref { margin-top: 8px; font-size: 11px; color: var(--muted); }
+.scr-ref summary { cursor: pointer; color: var(--accent); }
+.scr-ref-body { margin-top: 6px; max-height: 200px; overflow: auto; line-height: 1.7; border-left: 2px solid var(--line); padding-left: 8px; }
+.scr-ref-body b { color: var(--text); font-weight: 600; }
+.scr-ref-body .ok { color: var(--up); }
+.scr-ref-body .man { color: var(--muted); }
+.wl-metrics { display: block; color: var(--muted); font-weight: 400; font-size: 10px; margin-top: 2px; }
+
 /* modal */
 #modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; place-items: center; z-index: 50; padding: 16px; }
 #modal.show { display: grid; }
@@ -119,6 +138,56 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
           <option value="future">期货</option>
           <option value="crypto">数字资产</option>
         </select>
+      </div>
+      <div class="screener">
+        <div class="scr-head">
+          <label class="scr-toggle"><input type="checkbox" id="scrOn"> 小资金低波动筛选</label>
+          <span id="scrCount" class="wl-count"></span>
+        </div>
+        <div class="scr-body" id="scrBody" style="display:none">
+          <div class="scr-grid">
+            <label>股价下限(元)<input id="scrPMin" type="number" value="5" step="1"></label>
+            <label>股价上限(元)<input id="scrPMax" type="number" value="60" step="1"></label>
+            <label>年化波动≤%<input id="scrVol" type="number" value="30" step="1"></label>
+            <label>ATR/价≤%<input id="scrAtr" type="number" value="3" step="0.5"></label>
+            <label>最大回撤≤%<input id="scrDD" type="number" value="30" step="1"></label>
+            <label>52周位置≥<input id="scrPosMin" type="number" value="0.25" step="0.05"></label>
+            <label>52周位置≤<input id="scrPosMax" type="number" value="0.80" step="0.05"></label>
+            <label>日均成交额≥亿<input id="scrTurn" type="number" value="1.5" step="0.5"></label>
+          </div>
+          <label class="scr-chk"><input type="checkbox" id="scrMa20" checked> 收盘价&gt;MA20 且 MA20 向上</label>
+          <label class="scr-chk"><input type="checkbox" id="scrEx3m" checked> 剔除近3月涨幅&gt;100%</label>
+          <button id="scrReset" class="scr-btn">恢复 PDF 默认口径</button>
+          <details class="scr-ref">
+            <summary>PDF 选股口径全集（20项）</summary>
+            <div class="scr-ref-body">
+              <b>可实时计算（✅ 已做成筛选项）</b><br>
+              <span class="ok">✅</span> 股价 5–60 元<br>
+              <span class="ok">✅</span> 年化波动率 ≤30%<br>
+              <span class="ok">✅</span> ATR14/价 ≤3%<br>
+              <span class="ok">✅</span> 近250日最大回撤 ≤30%<br>
+              <span class="ok">✅</span> 52周价格位置 0.25–0.80<br>
+              <span class="ok">✅</span> 近60日日均成交额 ≥1.5亿（仅股票）<br>
+              <span class="ok">✅</span> 收盘价&gt;MA20 且 MA20 向上<br>
+              <span class="ok">✅</span> 剔除近3月涨幅&gt;100%<br>
+              <b>需人工核对（📋 无基础数据，App 不自动判）</b><br>
+              <span class="man">📋</span> 总市值 150–1500亿<br>
+              <span class="man">📋</span> ROE 连续2–3年 ≥8%（公用≥6%）<br>
+              <span class="man">📋</span> 扣非净利润增速 ≥0<br>
+              <span class="man">📋</span> 经营现金流/净利润 ≥0.6<br>
+              <span class="man">📋</span> 股息率(TTM) ≥1.5%（红利≥2.5%）<br>
+              <span class="man">📋</span> 连续分红 ≥3年<br>
+              <span class="man">📋</span> PE/PB 低于行业均值或历史50%分位以下<br>
+              <span class="man">📋</span> 股东属性：国资为主/民资龙头<br>
+              <span class="man">📋</span> 剔除 ST<br>
+              <span class="man">📋</span> 剔除 立案/问询/业绩下修<br>
+              <span class="man">📋</span> 质押比例&gt;25% 剔除<br>
+              <span class="man">📋</span> 商誉/净资产&gt;15% 剔除<br>
+              <span class="man">📋</span> 次新股(&lt;1年)/连续2年亏损 剔除<br>
+            </div>
+          </details>
+          <p class="note">筛选基于当前已加载行情（模拟或实时）。切到「实时」并刷新后按真实数据计算更准；成交额仅对股票生效。📋 项需你人工核对。</p>
+        </div>
       </div>
       <ul id="watchlist"></ul>
     </aside>
@@ -792,6 +861,58 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
   const inflight = new Map();
   const $ = function (s) { return document.querySelector(s); };
 
+  // ---------- 小资金低波动筛选器（PDF《小资金低波动备选池》口径，可调） ----------
+  state.screen = {
+    on: false,
+    priceMin: 5, priceMax: 60,
+    volMax: 30, atrMax: 3, ddMax: 30,
+    posMin: 0.25, posMax: 0.80,
+    turnMin: 1.5, ma20Up: true, exclude3m: true,
+  };
+  let _metrics = {};  // code -> screenMetrics(bars)，随行情刷新重算
+  function smaL(a, n) { const r = new Array(a.length).fill(null); let s = 0; for (let i = 0; i < a.length; i++) { s += a[i]; if (i >= n) s -= a[i - n]; if (i >= n - 1) r[i] = s / n; } return r; }
+  function screenMetrics(bars, type) {
+    const n = bars.length; const c = bars.map(function (b) { return b.c; }); const last = c[n - 1];
+    const rets = []; for (let i = 1; i < n; i++) rets.push((c[i] - c[i - 1]) / c[i - 1]);
+    const mean = rets.reduce(function (a, b) { return a + b; }, 0) / (rets.length || 1);
+    const variance = rets.reduce(function (a, b) { return a + (b - mean) * (b - mean); }, 0) / (rets.length || 1);
+    const annVol = Math.sqrt(variance) * Math.sqrt(252) * 100;
+    const tr = []; for (let i = 1; i < n; i++) { const pc = c[i - 1]; tr.push(Math.max(bars[i].h - bars[i].l, Math.abs(bars[i].h - pc), Math.abs(bars[i].l - pc))); }
+    const atr14 = tr.slice(-14); const atr = atr14.reduce(function (a, b) { return a + b; }, 0) / (atr14.length || 1);
+    const atrPct = atr / last * 100;
+    let peak = c[0], mdd = 0; for (let i = 0; i < n; i++) { if (c[i] > peak) peak = c[i]; const dd = (peak - c[i]) / peak; if (dd > mdd) mdd = dd; }
+    const maxDD = mdd * 100;
+    const w = c.slice(-Math.min(250, n)); const lo = Math.min.apply(null, w), hi = Math.max.apply(null, w);
+    const pos52 = hi > lo ? (last - lo) / (hi - lo) : 0.5;
+    const shareMul = type === 'stock' ? 100 : 1;  // A股 1手=100股
+    let turn = null; if (n >= 60) { const tail = bars.slice(-60); let s = 0; tail.forEach(function (b) { s += b.c * b.v * shareMul; }); turn = s / 60 / 1e8; }
+    const ma20 = smaL(c, 20); const mNow = ma20[n - 1], mPrev = n > 5 ? ma20[n - 6] : null;
+    const ma20Up = mNow != null && mPrev != null && mNow > mPrev && last > mNow;
+    const mom3m = n >= 61 ? (last / c[n - 61] - 1) * 100 : null;
+    return { price: last, annVol: annVol, atrPct: atrPct, maxDD: maxDD, pos52: pos52, turnover: turn, ma20Up: ma20Up, mom3m: mom3m };
+  }
+  function computeAllMetrics() {
+    const map = {};
+    UNIVERSE.forEach(function (u) {
+      let bars = realCache.get(u.code + '|' + state.days);
+      if (!bars) bars = QD.generateSeries(u, state.days);
+      map[u.code] = screenMetrics(bars, u.type);
+    });
+    return map;
+  }
+  function passesScreen(u, m) {
+    const f = state.screen;
+    if (m.price < f.priceMin || m.price > f.priceMax) return false;
+    if (m.annVol > f.volMax) return false;
+    if (m.atrPct > f.atrMax) return false;
+    if (m.maxDD > f.ddMax) return false;
+    if (m.pos52 < f.posMin || m.pos52 > f.posMax) return false;
+    if (u.type === 'stock' && m.turnover != null && m.turnover < f.turnMin) return false;
+    if (f.ma20Up && !m.ma20Up) return false;
+    if (f.exclude3m && m.mom3m != null && m.mom3m > 100) return false;
+    return true;
+  }
+
   function meta(code) { return UNIVERSE.find(function (u) { return u.code === code; }); }
   function setStatus(t) { $('#status').textContent = t; }
   function setBadge(t, color) { const b = $('#srcBadge'); b.textContent = t; b.style.color = color || 'var(--muted)'; }
@@ -880,18 +1001,24 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     const tf = state.typeFilter || 'all';
     return UNIVERSE.filter(function (u) {
       if (tf !== 'all' && u.type !== tf) return false;
-      if (!q) return true;
-      return u.name.toLowerCase().indexOf(q) >= 0 || u.code.toLowerCase().indexOf(q) >= 0;
+      if (q && !(u.name.toLowerCase().indexOf(q) >= 0 || u.code.toLowerCase().indexOf(q) >= 0)) return false;
+      if (state.screen.on) { const m = _metrics[u.code]; if (!m || !passesScreen(u, m)) return false; }
+      return true;
     });
   }
-  function makeWlItem(u, bars, live) {
+  function makeWlItem(u, bars, live, m) {
     const last = bars[bars.length - 1].c, prev = bars[bars.length - 2] ? bars[bars.length - 2].c : last;
     const chg = prev ? (last - prev) / prev * 100 : 0;
     const ind = QD.computeIndicators(bars); const sig = QS.signalAt(bars, ind, state.weights);
     const map = { BUY: ['买', '#26a69a'], SELL: ['卖', '#ef5350'], HOLD: ['持', '#f0b90b'] };
+    let metricsLine = '';
+    if (m) {
+      metricsLine = '<small class="wl-metrics">σ' + m.annVol.toFixed(0) + '% · 回撤' + m.maxDD.toFixed(0) + '% · 52w' + (m.pos52 * 100).toFixed(0) + '%'
+        + (m.turnover != null ? ' · 额' + m.turnover.toFixed(1) + '亿' : '') + '</small>';
+    }
     const li = document.createElement('li');
     li.className = 'wl-item' + (u.code === state.code ? ' active' : ''); li.dataset.code = u.code;
-    li.innerHTML = '<span class="wl-name">' + u.name + (live ? '<span class="wl-live">●实时</span>' : '') + '<small>' + u.code + '</small></span>' +
+    li.innerHTML = '<span class="wl-name">' + u.name + (live ? '<span class="wl-live">●实时</span>' : '') + '<small>' + u.code + '</small>' + metricsLine + '</span>' +
       '<span class="wl-price">' + fmt(last) + '<small style="color:' + (chg >= 0 ? '#26a69a' : '#ef5350') + '">' + (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%</small></span>' +
       '<span class="wl-sig" style="background:' + map[sig.action][1] + '">' + map[sig.action][0] + '</span>';
     li.onclick = function () { selectSymbol(u.code); };
@@ -899,13 +1026,15 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
   }
   function renderWatchlist() {
     const ul = $('#watchlist'); ul.innerHTML = ''; wlMap = {};
+    if (state.screen.on) _metrics = computeAllMetrics(); else _metrics = {};
     const vis = visibleUniverse();
     vis.forEach(function (u) {
       let bars = realCache.get(u.code + '|' + state.days);
       const live = !!bars; if (!bars) bars = QD.generateSeries(u, state.days);
-      const li = makeWlItem(u, bars, live); ul.appendChild(li); wlMap[u.code] = li;
+      const li = makeWlItem(u, bars, live, state.screen.on ? _metrics[u.code] : null); ul.appendChild(li); wlMap[u.code] = li;
     });
     const c = $('#wlCount'); if (c) c.textContent = vis.length + ' / ' + UNIVERSE.length;
+    const sc = $('#scrCount'); if (sc) sc.textContent = state.screen.on ? ('达标 ' + vis.length) : '';
   }
   function updateWlItem(u) {
     const li = wlMap[u.code]; if (!li) return;
@@ -922,7 +1051,7 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
       const slice = list.slice(k, k + B);
       Promise.all(slice.map(function (u) {
         return ensureReal(u, state.days).then(function () { updateWlItem(u); }).catch(function () {});
-      })).then(function () { batch(k + B); });
+      })).then(function () { if (state.screen.on) renderWatchlist(); batch(k + B); });
     })(0);
   }
 
@@ -1009,6 +1138,39 @@ ul#watchlist { list-style: none; overflow-y: auto; flex: 1; }
     $('#cfgClose').onclick = closeSettings;
     $('#modal').onclick = function (e) { if (e.target === $('#modal')) closeSettings(); };
     let rt; window.addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(function () { if (state.bars) window.QChart.draw($('#chart'), state.bars, state.ind, {}); }, 120); });
+
+    // ---------- 小资金低波动筛选器 绑定 ----------
+    const scrBody = $('#scrBody');
+    function syncScreenFromUI() {
+      const f = state.screen;
+      f.priceMin = parseFloat($('#scrPMin').value) || 0;
+      f.priceMax = parseFloat($('#scrPMax').value) || 1e9;
+      f.volMax = parseFloat($('#scrVol').value) || 1e9;
+      f.atrMax = parseFloat($('#scrAtr').value) || 1e9;
+      f.ddMax = parseFloat($('#scrDD').value) || 1e9;
+      const pmin = parseFloat($('#scrPosMin').value); f.posMin = isNaN(pmin) ? 0 : pmin;
+      const pmax = parseFloat($('#scrPosMax').value); f.posMax = isNaN(pmax) ? 1 : pmax;
+      f.turnMin = parseFloat($('#scrTurn').value) || 0;
+      f.ma20Up = $('#scrMa20').checked;
+      f.exclude3m = $('#scrEx3m').checked;
+      renderWatchlist();
+    }
+    $('#scrOn').addEventListener('change', function (e) {
+      state.screen.on = e.target.checked; scrBody.style.display = state.screen.on ? 'block' : 'none'; renderWatchlist();
+    });
+    ['scrPMin', 'scrPMax', 'scrVol', 'scrAtr', 'scrDD', 'scrPosMin', 'scrPosMax', 'scrTurn'].forEach(function (id) {
+      $('#' + id).addEventListener('input', syncScreenFromUI);
+    });
+    $('#scrMa20').addEventListener('change', syncScreenFromUI);
+    $('#scrEx3m').addEventListener('change', syncScreenFromUI);
+    $('#scrReset').addEventListener('click', function () {
+      const d = { priceMin: 5, priceMax: 60, volMax: 30, atrMax: 3, ddMax: 30, posMin: 0.25, posMax: 0.80, turnMin: 1.5, ma20Up: true, exclude3m: true };
+      Object.assign(state.screen, d);
+      $('#scrPMin').value = d.priceMin; $('#scrPMax').value = d.priceMax; $('#scrVol').value = d.volMax;
+      $('#scrAtr').value = d.atrMax; $('#scrDD').value = d.ddMax; $('#scrPosMin').value = d.posMin;
+      $('#scrPosMax').value = d.posMax; $('#scrTurn').value = d.turnMin; $('#scrMa20').checked = d.ma20Up; $('#scrEx3m').checked = d.exclude3m;
+      renderWatchlist();
+    });
   }
 
   function init() { buildWeightSliders(); renderWatchlist(); bind(); selectSymbol(state.code); }
